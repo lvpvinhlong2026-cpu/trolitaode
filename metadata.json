@@ -1,0 +1,6 @@
+{
+  "name": "Hệ thống Hỗ trợ Giáo viên Toán AI",
+  "description": "Chuyển đổi Word/MathType sang LaTeX, tạo đề thi phân hóa 10-6-4, giao bài qua QR, chấm điểm tự động và phân tích học tập bằng AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

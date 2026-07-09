@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  
+  --color-primary-start: #4A90E2;
+  --color-primary-end: #FF9500;
+}
+
+/* Base style resets and customizations */
+body {
+  font-family: var(--font-sans);
+}
+
+/* Custom gorgeous scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Custom MathJax dynamic layout animation */
+mjx-container {
+  display: inline-block;
+  margin: 0.1em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+
+/* Pulsing background for premium look */
+.bg-mesh {
+  background-color: #f8fafc;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(74, 144, 226, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(255, 149, 0, 0.05) 0px, transparent 50%);
+}
+
+.dark .bg-mesh {
+  background-color: #0f172a;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(74, 144, 226, 0.1) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(255, 149, 0, 0.08) 0px, transparent 50%);
+}
