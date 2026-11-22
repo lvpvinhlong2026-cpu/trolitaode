@@ -1,5 +1,5 @@
 {
-  "name": "Trợ Lý Khảo Thí & Tạo Đề AI - Chuẩn CV 7991",
+  "name": "TRỢ LÍ TẠO ĐỀ",
   "description": "Hệ thống khảo thí chuẩn Công văn 7991, Ma trận & Bản đặc tả 10.0đ, Sinh đề AI theo ma trận, Tạo đề tương tự, Trộn 4 mã đề, Bóc tách OCR sang LaTeX, Đồ thị & Hình học 3D 300 DPI (tự động cắt sát viền 24px cho Word), Giáo án 5512 và Mô phỏng tương tác.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -1,9 +1,10 @@
 @echo off
-title TAO DE KIEM TRA CV 7991 - BGD VA DT
+title TRỢ LÍ TẠO ĐỀ - CHUẨN CV 7991
 cd /d "%~dp0"
 
 echo ====================================================================
-echo        HE THONG TAO DE KIEM TRA CHUAN CONG VAN 7991 (BGD VA DT)
+echo                         TRỢ LÍ TẠO ĐỀ
+echo        He Thong Tao De Kiem Tra Chuan Cong Van 7991 (BGD & DT)
 echo     Ma Tran, Dac Ta, Tron 4 Ma De, Thi Thu Online, Do Thi 300 DPI
 echo                   Tac gia: GV Le Vinh Phuc (0944405124)
 echo ====================================================================
@@ -63,7 +64,7 @@ if not exist "node_modules\" (
 start "" powershell -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://localhost:3001'"
 
 echo ====================================================================
-echo   HE THONG TAO DE CV 7991 DA SAN SANG!
+echo   TRỢ LÍ TẠO ĐỀ ĐÃ SẴN SÀNG!
 echo   - May chu: http://localhost:3001
 echo   - Trinh duyet web se tu dong mo trong 2 giay...
 echo   - De dung he thong: Dong cua so nay hoac nhan Ctrl + C

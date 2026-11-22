@@ -27,9 +27,7 @@ import { ActiveTabType } from '../App';
 
 export type MainRibbonCategory = 
   | 'khao_thi' 
-  | 'bien_tap' 
   | 'do_thi' 
-  | 'giang_day' 
   | 'tro_giup';
 
 interface RibbonTool {
@@ -86,17 +84,9 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
       case 'cv7991':
       case 'similar':
         return 'khao_thi';
-      case 'standardize':
-      case 'correction':
-        return 'bien_tap';
       case 'function_graph':
       case 'geometry':
         return 'do_thi';
-      case 'lesson_plan':
-      case 'mindmap':
-      case 'illustration':
-      case 'simulation':
-        return 'giang_day';
       case 'guide':
       default:
         return 'tro_giup';
@@ -114,9 +104,7 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
   // Ribbon Categories and their tools according to MS Word style
   const RIBBON_TABS: { id: MainRibbonCategory; label: string; icon: React.ReactNode }[] = [
     { id: 'khao_thi', label: 'Khảo Thí & Tạo Đề', icon: <FileCheck2 size={15} /> },
-    { id: 'bien_tap', label: 'Biên Tập & OCR', icon: <FileSignature size={15} /> },
     { id: 'do_thi', label: 'Hình Vẽ & Đồ Thị', icon: <TrendingUp size={15} /> },
-    { id: 'giang_day', label: 'Giảng Dạy & Trực Quan', icon: <BookOpen size={15} /> },
     { id: 'tro_giup', label: 'Trợ Giúp', icon: <HelpCircle size={15} /> },
   ];
 
@@ -154,29 +142,6 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
         ]
       }
     ],
-    bien_tap: [
-      {
-        groupTitle: 'Bóc Tách & Chuyển Đổi',
-        tools: [
-          {
-            id: 'standardize',
-            label: 'Bóc Tách OCR Sang LaTeX',
-            icon: <FileSignature size={19} className="text-sky-600 dark:text-sky-400" />,
-            badge: 'OCR AI'
-          }
-        ]
-      },
-      {
-        groupTitle: 'Hiệu Đính',
-        tools: [
-          {
-            id: 'correction',
-            label: 'Sửa Lỗi Văn Bản & LaTeX',
-            icon: <Sparkles size={19} className="text-amber-600 dark:text-amber-400" />
-          }
-        ]
-      }
-    ],
     do_thi: [
       {
         groupTitle: 'Giải Tích (300 DPI)',
@@ -201,38 +166,19 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
         ]
       }
     ],
-    giang_day: [
+    tro_giup: [
       {
-        groupTitle: 'Soạn Bài GDPT 2018',
+        groupTitle: 'Trợ Giúp & Thiết Lập',
         tools: [
           {
-            id: 'lesson_plan',
-            label: 'Kế Hoạch Bài Dạy (CV 5512)',
-            icon: <BookOpen size={19} className="text-violet-600 dark:text-violet-400" />
-          },
-          {
-            id: 'mindmap',
-            label: 'Sơ Đồ Tư Duy (Mindmap)',
-            icon: <Brain size={19} className="text-orange-600 dark:text-orange-400" />
-          }
-        ]
-      },
-      {
-        groupTitle: 'Trực Quan Hóa',
-        tools: [
-          {
-            id: 'illustration',
-            label: 'Tạo Ảnh Minh Họa Sư Phạm',
-            icon: <ImageIcon size={19} className="text-pink-600 dark:text-pink-400" />
-          },
-          {
-            id: 'simulation',
-            label: 'Mô Phỏng Tương Tác',
-            icon: <FlaskConical size={19} className="text-rose-600 dark:text-rose-400" />
+            id: 'guide',
+            label: 'Hướng Dẫn Sử Dụng',
+            icon: <HelpCircle size={19} className="text-emerald-600 dark:text-emerald-400" />
           }
         ]
       }
-    ],
+    ]
+  };
     tro_giup: [
       {
         groupTitle: 'Trợ Giúp & Thiết Lập',
@@ -273,9 +219,9 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
             <GraduationCap size={15} />
           </div>
           <span className="font-extrabold tracking-tight text-slate-800 dark:text-slate-100 text-xs uppercase flex items-center gap-2">
-            Trợ Lý Khảo Thí & Tạo Đề CV 7991
+            TRỢ LÍ TẠO ĐỀ
             <span className="hidden md:inline-block text-[10px] px-1.5 py-0.2 rounded font-semibold bg-teal-100/70 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
-              Bộ GD&ĐT
+              CV 7991
             </span>
           </span>
         </div>

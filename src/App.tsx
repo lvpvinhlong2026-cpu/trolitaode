@@ -25,14 +25,8 @@ import { BookUploadModal } from './components/BookUploadModal';
 import { ParsedLessonItem } from './utils/bookParser';
 import CV7991ExamGenerator from './components/CV7991ExamGenerator';
 import SimilarExamGenerator from './components/SimilarExamGenerator';
-import StandardizeExamGenerator from './components/StandardizeExamGenerator';
-import TextCorrection from './components/TextCorrection';
 import FunctionGraphTool from './components/FunctionGraphTool';
 import GeometryTool from './components/GeometryTool';
-import LessonPlanGenerator from './components/LessonPlanGenerator';
-import MindmapGenerator from './components/MindmapGenerator';
-import IllustrationGenerator from './components/IllustrationGenerator';
-import SimulationGenerator from './components/SimulationGenerator';
 import UserGuide from './components/UserGuide';
 import SettingsForm from './components/SettingsForm';
 
@@ -41,14 +35,8 @@ export type ActiveTabType =
   | 'matrix_full'
   | 'cv7991' 
   | 'similar' 
-  | 'standardize' 
-  | 'correction' 
   | 'function_graph' 
   | 'geometry' 
-  | 'lesson_plan' 
-  | 'mindmap' 
-  | 'illustration' 
-  | 'simulation' 
   | 'guide';
 
 export default function App() {
@@ -238,14 +226,8 @@ export default function App() {
       case 'matrix_full': return 'Ma Trận & Đặc Tả 10.0đ';
       case 'cv7991': return 'Sinh Đề Theo Ma Trận';
       case 'similar': return 'Nhân Bản Đề Tương Tự';
-      case 'standardize': return 'Bóc Tách OCR Sang LaTeX';
-      case 'correction': return 'Sửa Lỗi Văn Bản & LaTeX';
       case 'function_graph': return 'Bảng Biến Thiên & Đồ Thị Oxy';
       case 'geometry': return 'Hình Học 3D & GeoGebra';
-      case 'lesson_plan': return 'Kế Hoạch Bài Dạy 5512';
-      case 'mindmap': return 'Sơ Đồ Tư Duy';
-      case 'illustration': return 'Minh Họa Giáo Khoa';
-      case 'simulation': return 'Mô Phỏng Tương Tác';
       case 'guide': default: return 'Hướng Dẫn Sử Dụng';
     }
   };
@@ -255,7 +237,7 @@ export default function App() {
       <div className="flex h-screen w-full items-center justify-center bg-[#fafafa] dark:bg-slate-900">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs text-slate-500 font-medium">Đang khởi tạo Hệ thống Khảo Thí & Tạo Đề CV 7991...</p>
+          <p className="text-xs text-slate-500 font-medium">Đang khởi tạo TRỢ LÍ TẠO ĐỀ...</p>
         </div>
       </div>
     );
@@ -343,47 +325,17 @@ export default function App() {
             <SimilarExamGenerator apiKey={apiKey} model={preferredModel} />
           </div>
 
-          {/* TAB 5: BÓC TÁCH OCR SANG LATEX */}
-          <div className={activeTab === 'standardize' ? 'block animate-fade-in' : 'hidden'}>
-            <StandardizeExamGenerator apiKey={apiKey} model={preferredModel} />
-          </div>
-
-          {/* TAB 6: SỬA LỖI VĂN BẢN & MÃ LATEX */}
-          <div className={activeTab === 'correction' ? 'block animate-fade-in' : 'hidden'}>
-            <TextCorrection apiKey={apiKey} model={preferredModel} />
-          </div>
-
-          {/* TAB 7: BẢNG BIẾN THIÊN & ĐỒ THỊ OXY 300 DPI */}
+          {/* TAB 5: BẢNG BIẾN THIÊN & ĐỒ THỊ OXY 300 DPI */}
           <div className={activeTab === 'function_graph' ? 'block animate-fade-in' : 'hidden'}>
             <FunctionGraphTool apiKey={apiKey} model={preferredModel} />
           </div>
 
-          {/* TAB 8: HÌNH HỌC KHÔNG GIAN 3D & GEOGEBRA */}
+          {/* TAB 6: HÌNH HỌC KHÔNG GIAN 3D & GEOGEBRA */}
           <div className={activeTab === 'geometry' ? 'block animate-fade-in' : 'hidden'}>
             <GeometryTool apiKey={apiKey} model={preferredModel} />
           </div>
 
-          {/* TAB 9: KẾ HOẠCH BÀI DẠY (CV 5512) */}
-          <div className={activeTab === 'lesson_plan' ? 'block animate-fade-in' : 'hidden'}>
-            <LessonPlanGenerator apiKey={apiKey} model={preferredModel} />
-          </div>
-
-          {/* TAB 10: SƠ ĐỒ TƯ DUY (MINDMAP) */}
-          <div className={activeTab === 'mindmap' ? 'block animate-fade-in' : 'hidden'}>
-            <MindmapGenerator apiKey={apiKey} model={preferredModel} />
-          </div>
-
-          {/* TAB 11: ẢNH MINH HỌA GIÁO KHOA SƯ PHẠM */}
-          <div className={activeTab === 'illustration' ? 'block animate-fade-in' : 'hidden'}>
-            <IllustrationGenerator apiKey={apiKey} model={preferredModel} />
-          </div>
-
-          {/* TAB 12: MÔ PHỎNG TƯƠNG TÁC */}
-          <div className={activeTab === 'simulation' ? 'block animate-fade-in' : 'hidden'}>
-            <SimulationGenerator apiKey={apiKey} model={preferredModel} />
-          </div>
-
-          {/* TAB 13: HƯỚNG DẪN SỬ DỤNG */}
+          {/* TAB 7: HƯỚNG DẪN SỬ DỤNG */}
           <div className={activeTab === 'guide' ? 'block animate-fade-in' : 'hidden'}>
             <UserGuide />
           </div>
@@ -435,7 +387,7 @@ export default function App() {
                 <Sparkles size={28} className="animate-pulse" />
               </div>
               <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
-                Chào mừng Quý Thầy/Cô đến với Hệ Thống Tạo Đề CV 7991!
+                Chào mừng Quý Thầy/Cô đến với TRỢ LÍ TẠO ĐỀ!
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
                 Hệ thống hỗ trợ cơ chế Auto-Fallback tự động chuyển đổi thông minh giữa Gemini 3 Pro, Gemini 3 Flash và Gemini 2.5 Flash, đảm bảo luôn vận hành mượt mà.
