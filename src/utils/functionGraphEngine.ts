@@ -21,6 +21,39 @@ export interface CustomPoint {
   label?: string;   // Tên nhãn điểm: e.g. 'M', 'A', 'B' hoặc để trống
 }
 
+/**
+ * Text tùy biến được người dùng thêm vào đồ thị Oxy (ví dụ: (C), y = f(x), d, A(-1; 3)...)
+ * Tọa độ (x, y) là tọa độ toán học trong mặt phẳng Oxy, tự động bám theo hệ trục khi thu phóng / dịch chuyển
+ * Hỗ trợ kéo thả trực tiếp bằng chuột trên Canvas
+ */
+export interface CustomTextAnnotation {
+  id: string;
+  text: string;           // Ký hiệu / nội dung chữ, ví dụ: '(C)', 'y = f(x)', 'd', 'A', 'B'
+  x: number;              // Tọa độ toán học x trên hệ Oxy
+  y: number;              // Tọa độ toán học y trên hệ Oxy
+  fontSize?: number;      // Cỡ chữ (mặc định ~22)
+  color?: string;         // Màu chữ (mặc định '#000000')
+  isBold?: boolean;       // In đậm (mặc định theo isBoldLabels)
+  isItalic?: boolean;     // In nghiêng toán học (mặc định true)
+}
+
+export interface IntegralAreaConfig {
+  enabled: boolean;
+  a: number;                         // Cận dưới
+  b: number;                         // Cận trên
+  gType?: 'zero' | 'linear';         // Đường biên thứ 2: 'zero' (trục Ox: y = 0) hoặc 'linear' (đường thẳng y = mx + n)
+  gLineM?: number;                   // Hệ số góc m của đường thẳng g(x) = mx + n
+  gLineN?: number;                   // Tung độ gốc n của đường thẳng g(x) = mx + n
+  style?: 'hatch' | 'fill' | 'both'; // 'hatch' (gạch sọc đen trắng chuẩn đề thi), 'fill' (tô màu mờ), 'both'
+  hatchAngle?: number;               // Góc nghiêng gạch sọc (độ, mặc định 45)
+  hatchSpacing?: number;             // Khoảng cách giữa các nét gạch sọc (pixels, mặc định 8)
+  hatchColor?: string;               // Màu nét gạch sọc (mặc định '#000000')
+  fillColor?: string;                // Màu phủ (mặc định 'rgba(13, 148, 136, 0.22)')
+  showBoundLines?: boolean;          // Vẽ đường dóng cận x = a, x = b nét đứt vuông góc Ox
+  showAreaLabel?: boolean;           // Hiển thị chữ ký hiệu diện tích S ở tâm miền
+  areaLabelText?: string;            // Nhãn diện tích (mặc định 'S')
+}
+
 export interface GraphConfig {
   type: 'cubic' | 'quartic' | 'rational' | 'rational_2_1' | 'quadratic';
   a: number;
@@ -53,6 +86,50 @@ export interface GraphConfig {
   intervalMode?: 'highlight' | 'only'; // 'highlight': vẽ [a;b] đậm, ngoài mờ; 'only': chỉ vẽ trên [a;b]
   showIntervalEndpoints?: boolean;     // Hiển thị chấm tròn và đường gióng tọa độ 2 đầu mút A, B
   asymptoteIntersectionLabel?: string; // Tên nhãn giao điểm tiệm cận (I)
+
+  // Ứng dụng tích phân tính diện tích hình phẳng (Toán 12)
+  integralArea?: IntegralAreaConfig;
+
+  // Tùy chỉnh vị trí gốc O
+  originQuadrant?: 'auto' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  originOffset?: { x: number; y: number };
+
+  // Tùy chỉnh nhãn trục
+  axisLabelXOffset?: { x: number; y: number };
+  axisLabelYOffset?: { x: number; y: number };
+
+  // Tùy chỉnh vị trí các số trên trục Ox và Oy:
+  oxLabelOffsets?: Record<string, { offsetX?: number; offsetY?: number; preferredAbove?: boolean }>;
+  oyLabelOffsets?: Record<string, { offsetX?: number; offsetY?: number; preferredRight?: boolean }>;
+
+  // Tùy chỉnh độ đậm nhạt & màu sắc nét vẽ đồ thị:
+  curveWidth?: number;         // Độ dày nét vẽ đồ thị (mặc định 2.6px)
+  curveColor?: string;         // Màu sắc đường cong đồ thị (mặc định '#000000')
+  axisWidth?: number;          // Độ dày trục tọa độ Oxy (mặc định 2.0px)
+  isBoldLabels?: boolean;      // In đậm chữ số và nhãn tọa độ (mặc định true)
+  dotRadius?: number;          // Bán kính chấm tròn cực trị & giao điểm (mặc định 2.4px, nhỏ gọn chuẩn SGK)
+  showExtremaDots?: boolean;   // Hiển thị chấm tròn đen tại các điểm cực trị (false cho chuẩn TikZ/LaTeX như hình)
+  showIntersectionDots?: boolean; // Hiển thị chấm tròn đen tại các giao điểm trục (false cho chuẩn TikZ/LaTeX)
+
+  // Danh sách các Text / Ký hiệu do người dùng thêm vào đồ thị:
+  customTexts?: CustomTextAnnotation[];
+}
+
+export interface GraphLabelHitbox {
+  id: string; // 'O', 'ox_2', 'oy_2', 'axis_x', 'axis_y', 'custom_text_<id>'
+  text: string;
+  type: 'origin' | 'ox' | 'oy' | 'axis_x' | 'axis_y' | 'custom_text';
+  customTextId?: string;
+  val?: number;
+  x: number;      // CSS pixel x
+  y: number;      // CSS pixel y
+  width: number;  // CSS pixel width
+  height: number; // CSS pixel height
+}
+
+export interface RenderGraphResult {
+  hitboxes: GraphLabelHitbox[];
+  unitScale: number;
 }
 
 export interface ExtremaPoint {
@@ -71,7 +148,8 @@ export interface IntersectionPoint {
  * Định dạng số gọn gàng chuẩn SGK (ưu tiên số nguyên, phân số đơn giản hoặc 1-2 chữ số thập phân)
  */
 export function formatNumDisplay(val: number): string {
-  return formatNum(val);
+  const str = formatNum(val);
+  return str.replace(/-/g, '−');
 }
 
 export interface AsymptoteInfo {
@@ -335,11 +413,11 @@ export function getIntersections(config: GraphConfig): IntersectionPoint[] {
 
   for (const xr of oxRoots) {
     if (xr >= xMin && xr <= xMax) {
-      // Yêu cầu: "chỉ hiện giao điểm với Ox khi kết quả là số nguyên"
-      // Kiểm tra hoành độ giao điểm có phải số nguyên hay không (sai số tối đa 1e-3)
+      // Hiện tất cả các giao điểm thực của đồ thị với Ox
       const isInteger = Math.abs(xr - Math.round(xr)) < 1e-3;
-      if (isInteger) {
-        list.push({ x: Math.round(xr), y: 0, axis: 'Ox' });
+      const roundedX = isInteger ? Math.round(xr) : Math.round(xr * 100) / 100;
+      if (!list.some(p => p.axis === 'Ox' && Math.abs(p.x - roundedX) < 1e-3)) {
+        list.push({ x: roundedX, y: 0, axis: 'Ox' });
       }
     }
   }
@@ -419,17 +497,32 @@ export function renderGraphToCanvas(
   config: GraphConfig,
   canvas: HTMLCanvasElement,
   dpiScale = 2.4,
-  options?: { fontSizeScale?: number; width?: number; height?: number; fontFamily?: string }
-): void {
+  options?: {
+    fontSizeScale?: number;
+    width?: number;
+    height?: number;
+    fontFamily?: string;
+    selectedCustomTextId?: string | null;
+  }
+): RenderGraphResult {
+  const hitboxes: GraphLabelHitbox[] = [];
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) return { hitboxes, unitScale: 36 };
 
   const fontScale = options?.fontSizeScale ?? config.fontSizeScale ?? 1.0;
   // Phông chữ chuẩn đề thi Toán học & SGK Việt Nam (Times New Roman ưu tiên số 1, Cambria Math số 2)
   const fontFam = options?.fontFamily ?? config.fontFamily ?? '"Times New Roman", "STIX Two Text", "Cambria Math", serif';
+  const isLatex = fontFam.includes('KaTeX') || fontFam.includes('Computer Modern');
+  const mathFontFam = isLatex
+    ? '"KaTeX_Math", "KaTeX_Main", "Latin Modern Math", serif'
+    : fontFam;
+  const numFontFam = isLatex
+    ? '"KaTeX_Main", "Latin Modern Roman", "Computer Modern", serif'
+    : fontFam;
   // Kích thước chuẩn đề thi Word và SGK (hệ trục trực chuẩn 1:1)
   const width = options?.width ?? 440;
   const height = options?.height ?? 400;
+  const isBoldLabels = config.isBoldLabels ?? true;
 
   canvas.width = Math.round(width * dpiScale);
   canvas.height = Math.round(height * dpiScale);
@@ -467,6 +560,9 @@ export function renderGraphToCanvas(
   const toMathX = (sx: number) => xCenter + (sx - screenCenterX) / unitScale;
   const toMathY = (sy: number) => yCenter - (sy - screenCenterY) / unitScale;
 
+  // Bán kính chấm tròn cực trị & giao điểm: mặc định 2.4px (thanh mảnh, tinh tế chuẩn SGK)
+  const dotRadius = config.dotRadius ?? 2.4;
+
   const originX = toScreenX(0);
   const originY = toScreenY(0);
 
@@ -488,7 +584,7 @@ export function renderGraphToCanvas(
   // Tự động kiểm tra vị trí đường cong f(x), đường gióng, tiệm cận
   // để các chữ và số hiển thị KHÔNG BAO GIỜ che khuất đồ thị
   // =========================================================================
-  const numFontSz = Math.round(20 * fontScale);
+  const numFontSz = Math.round(22 * fontScale);
   const minSafeDistOx = Math.round(24 * Math.max(0.85, fontScale));
   const minSafeDistOy = Math.round(22 * Math.max(0.85, fontScale));
   const minCollisionDistOx = Math.round(30 * Math.max(0.85, fontScale));
@@ -657,7 +753,7 @@ export function renderGraphToCanvas(
       const isNeg = fracMatch[1] === '-' || fracMatch[1] === '−' || fracMatch[1] === '\u2212';
       const fracFSize = Math.max(14, Math.round(fSize * 0.8));
       ctx.save();
-      ctx.font = `bold ${fracFSize}px ${fontFam}`;
+      ctx.font = `${isBoldLabels ? 'bold ' : 'normal '}${fracFSize}px ${numFontFam}`;
       const numW = ctx.measureText(fracMatch[2].trim()).width;
       const denW = ctx.measureText(fracMatch[3].trim()).width;
       ctx.restore();
@@ -666,7 +762,7 @@ export function renderGraphToCanvas(
       return minusW + barW;
     }
     ctx.save();
-    ctx.font = `bold ${fSize}px ${fontFam}`;
+    ctx.font = `${isBoldLabels ? 'bold ' : 'normal '}${fSize}px ${numFontFam}`;
     const w = ctx.measureText(trimmed.replace(/-/g, '−')).width;
     ctx.restore();
     return Math.max(14, w);
@@ -770,6 +866,11 @@ export function renderGraphToCanvas(
     const baseOffset = (isFrac ? 19 : 15) * Math.max(0.9, fontScale);
     const shiftX = Math.round((halfW + 4) * Math.max(0.9, fontScale));
 
+    const userCustom = config.oxLabelOffsets?.[text] || (val !== undefined ? config.oxLabelOffsets?.[String(val)] : undefined);
+    if (userCustom?.preferredAbove !== undefined) {
+      preferredAbove = userCustom.preferredAbove;
+    }
+
     const candidates = [
       { offsetY: baseOffset, offsetX: 0, prefPenalty: preferredAbove ? 18 : 0 },
       { offsetY: -baseOffset, offsetX: 0, prefPenalty: preferredAbove ? 0 : 5 },
@@ -807,32 +908,58 @@ export function renderGraphToCanvas(
       }
     }
 
+    let finalOffsetY = (userCustom?.preferredAbove !== undefined) ? (userCustom.preferredAbove ? -baseOffset : baseOffset) : bestCand.offsetY;
+    let finalOffsetX = bestCand.offsetX;
+    if (userCustom?.offsetY !== undefined) finalOffsetY += userCustom.offsetY;
+    if (userCustom?.offsetX !== undefined) finalOffsetX += userCustom.offsetX;
+
     // 2. Kiểm tra khoảng cách với các số đã có trên Ox để tránh đè chữ
-    const collisionIdx = oxLabelsList.findIndex(l => Math.abs(l.sx - sx) < minCollisionDistOx);
+    const collisionIdx = oxLabelsList.findIndex(l => {
+      const sameSide = (l.offsetY > 0 && finalOffsetY > 0) || (l.offsetY < 0 && finalOffsetY < 0);
+      const distThreshold = sameSide ? minCollisionDistOx : 14;
+      return Math.abs((l.sx + (l.offsetX || 0)) - (sx + finalOffsetX)) < distThreshold;
+    });
+
     if (collisionIdx !== -1) {
       const existing = oxLabelsList[collisionIdx];
       if (existing.text === text || Math.abs(existing.val - val) < 0.1) {
         if (priority > existing.priority) {
-          oxLabelsList[collisionIdx] = { val, text, sx, offsetY: bestCand.offsetY, offsetX: bestCand.offsetX, priority };
+          oxLabelsList[collisionIdx] = { val, text, sx, offsetY: finalOffsetY, offsetX: finalOffsetX, priority };
         }
         return;
       }
+
+      // Nếu đang cùng phía và va chạm, thử lật sang phía đối diện của trục Ox để hiển thị cả 2 số
+      const sameSide = (existing.offsetY > 0 && finalOffsetY > 0) || (existing.offsetY < 0 && finalOffsetY < 0);
+      if (sameSide && (userCustom?.preferredAbove === undefined)) {
+        const flippedOffsetY = -finalOffsetY;
+        const flippedCollision = oxLabelsList.some(l => {
+          const lSameSide = (l.offsetY > 0 && flippedOffsetY > 0) || (l.offsetY < 0 && flippedOffsetY < 0);
+          const dThresh = lSameSide ? minCollisionDistOx : 14;
+          return Math.abs((l.sx + (l.offsetX || 0)) - (sx + finalOffsetX)) < dThresh;
+        });
+        if (!flippedCollision) {
+          oxLabelsList.push({ val, text, sx, offsetY: flippedOffsetY, offsetX: finalOffsetX, priority });
+          return;
+        }
+      }
+
       if (priority > existing.priority) {
-        oxLabelsList[collisionIdx] = { val, text, sx, offsetY: bestCand.offsetY, offsetX: bestCand.offsetX, priority };
+        oxLabelsList[collisionIdx] = { val, text, sx, offsetY: finalOffsetY, offsetX: finalOffsetX, priority };
       } else if (priority < existing.priority) {
         return;
       } else {
         const isCurrentInt = Math.abs(val - Math.round(val)) < 1e-3;
         const isExistingInt = Math.abs(existing.val - Math.round(existing.val)) < 1e-3;
         if (isCurrentInt && !isExistingInt) {
-          oxLabelsList[collisionIdx] = { val, text, sx, offsetY: bestCand.offsetY, offsetX: bestCand.offsetX, priority };
+          oxLabelsList[collisionIdx] = { val, text, sx, offsetY: finalOffsetY, offsetX: finalOffsetX, priority };
         }
         return;
       }
       return;
     }
 
-    oxLabelsList.push({ val, text, sx, offsetY: bestCand.offsetY, offsetX: bestCand.offsetX, priority });
+    oxLabelsList.push({ val, text, sx, offsetY: finalOffsetY, offsetX: finalOffsetX, priority });
   }
 
   function registerOyLabel(val: number, preferredRight?: boolean, priority = 1) {
@@ -848,6 +975,11 @@ export function renderGraphToCanvas(
     const halfH = isFrac ? numFontSz * 0.9 : numFontSz * 0.55;
     const baseOffset = Math.round(8 * Math.max(0.9, fontScale));
     const vertShift = Math.round((isFrac ? 13 : 11) * Math.max(0.9, fontScale));
+
+    const userCustom = config.oyLabelOffsets?.[text] || (val !== undefined ? config.oyLabelOffsets?.[String(val)] : undefined);
+    if (userCustom?.preferredRight !== undefined) {
+      preferredRight = userCustom.preferredRight;
+    }
 
     const candidates: {
       offsetX: number;
@@ -897,6 +1029,12 @@ export function renderGraphToCanvas(
       }
     }
 
+    let finalOffsetX = (userCustom?.preferredRight !== undefined) ? (userCustom.preferredRight ? baseOffset : -baseOffset) : bestCand.offsetX;
+    let finalOffsetY = bestCand.offsetY;
+    let finalAlign = (userCustom?.preferredRight !== undefined) ? (userCustom.preferredRight ? 'left' : 'right') : bestCand.align;
+    if (userCustom?.offsetX !== undefined) finalOffsetX += userCustom.offsetX;
+    if (userCustom?.offsetY !== undefined) finalOffsetY += userCustom.offsetY;
+
     // 2. Kiểm tra va chạm với số đã có trên Oy
     const collisionIdx = oyLabelsList.findIndex(l => Math.abs(l.sy - sy) < minCollisionDistOy);
     if (collisionIdx !== -1) {
@@ -907,9 +1045,9 @@ export function renderGraphToCanvas(
             val,
             text,
             sy,
-            offsetX: bestCand.offsetX,
-            offsetY: bestCand.offsetY,
-            align: bestCand.align,
+            offsetX: finalOffsetX,
+            offsetY: finalOffsetY,
+            align: finalAlign,
             priority
           };
         }
@@ -920,9 +1058,9 @@ export function renderGraphToCanvas(
           val,
           text,
           sy,
-          offsetX: bestCand.offsetX,
-          offsetY: bestCand.offsetY,
-          align: bestCand.align,
+          offsetX: finalOffsetX,
+          offsetY: finalOffsetY,
+          align: finalAlign,
           priority
         };
       } else if (priority < existing.priority) {
@@ -935,9 +1073,9 @@ export function renderGraphToCanvas(
             val,
             text,
             sy,
-            offsetX: bestCand.offsetX,
-            offsetY: bestCand.offsetY,
-            align: bestCand.align,
+            offsetX: finalOffsetX,
+            offsetY: finalOffsetY,
+            align: finalAlign,
             priority
           };
         }
@@ -950,9 +1088,9 @@ export function renderGraphToCanvas(
       val,
       text,
       sy,
-      offsetX: bestCand.offsetX,
-      offsetY: bestCand.offsetY,
-      align: bestCand.align,
+      offsetX: finalOffsetX,
+      offsetY: finalOffsetY,
+      align: finalAlign,
       priority
     });
   }
@@ -1000,23 +1138,215 @@ export function renderGraphToCanvas(
     ctx.restore();
   }
 
+  // 1.5. VẼ MIỀN DIỆN TÍCH TÍCH PHÂN GẠCH SỌC (TOÁN 12 - ỨNG DỤNG HÌNH HỌC TÍCH PHÂN)
+  if (config.integralArea && config.integralArea.enabled) {
+    const intCfg = config.integralArea;
+    const a = Math.min(intCfg.a, intCfg.b);
+    const b = Math.max(intCfg.a, intCfg.b);
+
+    if (b > a) {
+      const g = (x: number): number => {
+        if (intCfg.gType === 'linear') {
+          const m = intCfg.gLineM ?? 1;
+          const n = intCfg.gLineN ?? 0;
+          return m * x + n;
+        }
+        return 0; // Trục hoành Ox: y = 0
+      };
+
+      // Xây dựng đường viền khép kín của miền diện tích từ a đến b
+      const areaSteps = Math.max(120, Math.round((b - a) * unitScale * 2));
+      const areaDx = (b - a) / areaSteps;
+
+      ctx.save();
+      ctx.beginPath();
+
+      // Đi dọc theo đường f(x) từ a -> b
+      let first = true;
+      for (let i = 0; i <= areaSteps; i++) {
+        const x = a + i * areaDx;
+        const y = f(x);
+        if (y !== null && !isNaN(y)) {
+          const sx = toScreenX(x);
+          const sy = Math.max(-100, Math.min(height + 100, toScreenY(y)));
+          if (first) {
+            ctx.moveTo(sx, sy);
+            first = false;
+          } else {
+            ctx.lineTo(sx, sy);
+          }
+        }
+      }
+
+      // Đi ngược theo đường g(x) từ b -> a
+      for (let i = areaSteps; i >= 0; i--) {
+        const x = a + i * areaDx;
+        const gy = g(x);
+        const sx = toScreenX(x);
+        const sy = toScreenY(gy);
+        ctx.lineTo(sx, sy);
+      }
+
+      ctx.closePath();
+
+      // 1. Tô màu mờ nền nếu có
+      const doFill = intCfg.style === 'fill' || intCfg.style === 'both';
+      if (doFill) {
+        ctx.fillStyle = intCfg.fillColor || 'rgba(13, 148, 136, 0.22)';
+        ctx.fill();
+      }
+
+      // 2. Gạch sọc xiên (Hatch pattern) chuẩn đề thi nếu có
+      const doHatch = intCfg.style === 'hatch' || intCfg.style === 'both' || !intCfg.style;
+      if (doHatch) {
+        ctx.save();
+        ctx.clip(); // Giới hạn chỉ vẽ nét gạch trong miền khép kín
+
+        const angleDeg = intCfg.hatchAngle ?? 45;
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const spacing = Math.max(5, intCfg.hatchSpacing ?? 8);
+
+        ctx.strokeStyle = intCfg.hatchColor || (intCfg.style === 'both' ? '#0d9488' : '#000000');
+        ctx.lineWidth = 1.1;
+
+        // Bounding box của miền trên màn hình
+        const screenA = toScreenX(a);
+        const screenB = toScreenX(b);
+        const minScreenX = Math.min(screenA, screenB) - 10;
+        const maxScreenX = Math.max(screenA, screenB) + 10;
+        const minScreenY = 0;
+        const maxScreenY = height;
+
+        // Chiều dài đường chéo bao phủ
+        const diag = Math.hypot(maxScreenX - minScreenX, maxScreenY - minScreenY);
+        const cosA = Math.cos(angleRad);
+        const sinA = Math.sin(angleRad);
+
+        // Vector vuông góc với đường gạch
+        const perpX = -sinA;
+        const perpY = cosA;
+
+        // Tâm của bounding box
+        const cx = (minScreenX + maxScreenX) / 2;
+        const cy = (minScreenY + maxScreenY) / 2;
+
+        const numLines = Math.ceil(diag / spacing);
+        ctx.beginPath();
+        for (let k = -numLines; k <= numLines; k++) {
+          const px = cx + k * spacing * perpX;
+          const py = cy + k * spacing * perpY;
+
+          // Điểm đầu và cuối của đường gạch dài vượt ngoài clip
+          const x1 = px - diag * cosA;
+          const y1 = py - diag * sinA;
+          const x2 = px + diag * cosA;
+          const y2 = py + diag * sinA;
+
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.restore();
+
+      // 3. Nếu g(x) là đường thẳng (gType === 'linear'), vẽ luôn đường thẳng g(x)
+      if (intCfg.gType === 'linear') {
+        const m = intCfg.gLineM ?? 1;
+        const n = intCfg.gLineN ?? 0;
+        const yL = m * plotMinX + n;
+        const yR = m * plotMaxX + n;
+        ctx.save();
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([5, 3]);
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(plotMinX), toScreenY(yL));
+        ctx.lineTo(toScreenX(plotMaxX), toScreenY(yR));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 4. Vẽ 2 đường dóng cận thẳng đứng tại x = a và x = b
+      if (intCfg.showBoundLines ?? true) {
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1.3;
+
+        // Dóng cận a
+        const ya1 = f(a) ?? 0;
+        const ya2 = g(a);
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(a), toScreenY(Math.min(0, Math.min(ya1, ya2))));
+        ctx.lineTo(toScreenX(a), toScreenY(Math.max(0, Math.max(ya1, ya2))));
+        ctx.stroke();
+
+        // Dóng cận b
+        const yb1 = f(b) ?? 0;
+        const yb2 = g(b);
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(b), toScreenY(Math.min(0, Math.min(yb1, yb2))));
+        ctx.lineTo(toScreenX(b), toScreenY(Math.max(0, Math.max(yb1, yb2))));
+        ctx.stroke();
+        ctx.restore();
+
+        // Đăng ký số cận a, b trên trục hoành Ox
+        registerOxLabel(a, false, 4);
+        registerOxLabel(b, false, 4);
+      }
+
+      // 5. Hiển thị chữ nhãn diện tích "S" ở tâm miền
+      if (intCfg.showAreaLabel ?? true) {
+        const midX = (a + b) / 2;
+        const midY = ((f(midX) ?? 0) + g(midX)) / 2;
+        const sX = toScreenX(midX);
+        const sY = toScreenY(midY);
+        const sText = intCfg.areaLabelText || 'S';
+
+        ctx.save();
+        const sFontSz = Math.round(24 * fontScale);
+        ctx.font = `italic ${isBoldLabels ? 'bold ' : 'normal '}${sFontSz}px ${mathFontFam}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Viền trắng bảo vệ chữ không bị gạch sọc đè
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = isBoldLabels ? 5 : 3.2;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(sText, sX, sY);
+
+        ctx.fillStyle = doHatch ? '#000000' : '#0d9488';
+        ctx.fillText(sText, sX, sY);
+        if (isBoldLabels) {
+          ctx.strokeStyle = doHatch ? '#000000' : '#0d9488';
+          ctx.lineWidth = 0.6;
+          ctx.strokeText(sText, sX, sY);
+        }
+        ctx.restore();
+      }
+    }
+  }
+
   // 2. Vẽ Hệ trục tọa độ Oxy chuẩn mực SGK (nét đậm, mũi tên sắc sảo)
+  const axisWidth = config.axisWidth ?? 1.8;
   ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = axisWidth;
 
   // Trục Ox
   ctx.beginPath();
   ctx.moveTo(12, axY);
   ctx.lineTo(width - 10, axY);
   ctx.stroke();
-  drawArrowHead(ctx, width - 10, axY, 0);
+  drawArrowHead(ctx, width - 10, axY, 0, isLatex);
 
   // Trục Oy
   ctx.beginPath();
   ctx.moveTo(axX, height - 10);
   ctx.lineTo(axX, 10);
   ctx.stroke();
-  drawArrowHead(ctx, axX, 10, -Math.PI / 2);
+  drawArrowHead(ctx, axX, 10, -Math.PI / 2, isLatex);
 
   // 3. Vẽ các vạch chia đơn vị và ghi số đơn vị trên 2 trục Ox, Oy (nếu được bật)
   const showTicks = config.showTicks ?? false;
@@ -1071,64 +1401,120 @@ export function renderGraphToCanvas(
     }
   }
 
-  // 4. Nhãn trục Ox, Oy, gốc O (Font to rõ, in đậm chuẩn in ấn SGK & Word có viền Halo trắng)
-  const axisLabelFontSz = Math.round(23 * fontScale);
-  ctx.font = `italic bold ${axisLabelFontSz}px ${fontFam}`;
+  // 4. Nhãn trục Ox, Oy, gốc O (Font to rõ, chuẩn in ấn SGK & Word có viền Halo trắng)
+  const axisLabelFontSz = Math.round(25 * fontScale);
+  ctx.font = `italic ${isBoldLabels ? 'bold ' : 'normal '}${axisLabelFontSz}px ${mathFontFam}`;
 
   // Nhãn x nằm ngay phía trên mũi tên trục Ox
   if (axY >= 10 && axY <= height - 10) {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    const labelX_x = width - 10;
-    const labelX_y = Math.max(16, Math.min(height - 10, axY - 5));
+    const labelX_x = (width - 10) + (config.axisLabelXOffset?.x ?? 0);
+    const labelX_y = Math.max(16, Math.min(height - 10, axY - 5)) + (config.axisLabelXOffset?.y ?? 0);
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 5.5;
+    ctx.lineWidth = isBoldLabels ? 5.5 : 3.0;
     ctx.lineJoin = 'round';
     ctx.strokeText('x', labelX_x, labelX_y);
     ctx.fillStyle = '#000000';
     ctx.fillText('x', labelX_x, labelX_y);
+    if (isBoldLabels) {
+      ctx.lineWidth = 0.6;
+      ctx.strokeStyle = '#000000';
+      ctx.strokeText('x', labelX_x, labelX_y);
+    }
+
+    hitboxes.push({
+      id: 'axis_x',
+      text: 'x',
+      type: 'axis_x',
+      x: labelX_x - 22,
+      y: labelX_y - 22,
+      width: 26,
+      height: 26
+    });
   }
 
   // Nhãn y nằm ngay bên phải mũi tên trục Oy
   if (axX >= 10 && axX <= width - 10) {
+    ctx.font = `italic ${isBoldLabels ? 'bold ' : 'normal '}${axisLabelFontSz}px ${mathFontFam}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const labelY_x = Math.min(width - 14, Math.max(14, axX + 8));
-    const labelY_y = 14;
+    const labelY_x = Math.min(width - 14, Math.max(14, axX + 8)) + (config.axisLabelYOffset?.x ?? 0);
+    const labelY_y = 14 + (config.axisLabelYOffset?.y ?? 0);
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 5.5;
+    ctx.lineWidth = isBoldLabels ? 5.5 : 3.0;
     ctx.lineJoin = 'round';
     ctx.strokeText('y', labelY_x, labelY_y);
     ctx.fillStyle = '#000000';
     ctx.fillText('y', labelY_x, labelY_y);
+    if (isBoldLabels) {
+      ctx.lineWidth = 0.6;
+      ctx.strokeStyle = '#000000';
+      ctx.strokeText('y', labelY_x, labelY_y);
+    }
+
+    hitboxes.push({
+      id: 'axis_y',
+      text: 'y',
+      type: 'axis_y',
+      x: labelY_x - 4,
+      y: labelY_y - 12,
+      width: 26,
+      height: 26
+    });
   }
 
   // Gốc O nằm ở góc phần tư thứ II (mặc định) hoặc góc phần tư thoáng nhất không đè đồ thị
   if (axX >= 14 && axX <= width - 14 && axY >= 14 && axY <= height - 14) {
     const oCandidates = [
-      { x: axX - 6, y: axY - 4, align: 'right' as const, baseline: 'bottom' as const, bX1: axX - 22, bX2: axX - 2, bY1: axY - 22, bY2: axY - 2, pref: 0 },
-      { x: axX + 6, y: axY + 16, align: 'left' as const, baseline: 'bottom' as const, bX1: axX + 2, bX2: axX + 22, bY1: axY + 2, bY2: axY + 22, pref: 5 },
-      { x: axX - 6, y: axY + 16, align: 'right' as const, baseline: 'bottom' as const, bX1: axX - 22, bX2: axX - 2, bY1: axY + 2, bY2: axY + 22, pref: 10 },
-      { x: axX + 6, y: axY - 4, align: 'left' as const, baseline: 'bottom' as const, bX1: axX + 2, bX2: axX + 22, bY1: axY - 22, bY2: axY - 2, pref: 15 },
+      { x: axX - 6, y: axY - 4, align: 'right' as const, baseline: 'bottom' as const, bX1: axX - 22, bX2: axX - 2, bY1: axY - 22, bY2: axY - 2, pref: 0, key: 'top-left' as const },
+      { x: axX + 6, y: axY + 16, align: 'left' as const, baseline: 'bottom' as const, bX1: axX + 2, bX2: axX + 22, bY1: axY + 2, bY2: axY + 22, pref: 5, key: 'bottom-right' as const },
+      { x: axX - 6, y: axY + 16, align: 'right' as const, baseline: 'bottom' as const, bX1: axX - 22, bX2: axX - 2, bY1: axY + 2, bY2: axY + 22, pref: 10, key: 'bottom-left' as const },
+      { x: axX + 6, y: axY - 4, align: 'left' as const, baseline: 'bottom' as const, bX1: axX + 2, bX2: axX + 22, bY1: axY - 22, bY2: axY - 2, pref: 15, key: 'top-right' as const },
     ];
     let bestO = oCandidates[0];
-    let bestOScore = Infinity;
-    for (const cand of oCandidates) {
-      const curveHits = checkCurveCollision(cand.bX1, cand.bY1, cand.bX2, cand.bY2, 2);
-      const score = cand.pref + curveHits * 2000;
-      if (score < bestOScore) {
-        bestOScore = score;
-        bestO = cand;
+    if (config.originQuadrant && config.originQuadrant !== 'auto') {
+      const found = oCandidates.find(c => c.key === config.originQuadrant);
+      if (found) bestO = found;
+    } else {
+      let bestOScore = Infinity;
+      for (const cand of oCandidates) {
+        const curveHits = checkCurveCollision(cand.bX1, cand.bY1, cand.bX2, cand.bY2, 2);
+        const score = cand.pref + curveHits * 2000;
+        if (score < bestOScore) {
+          bestOScore = score;
+          bestO = cand;
+        }
       }
     }
+
+    const drawOX = bestO.x + (config.originOffset?.x ?? 0);
+    const drawOY = bestO.y + (config.originOffset?.y ?? 0);
+
+    ctx.font = `italic ${isBoldLabels ? 'bold ' : 'normal '}${axisLabelFontSz}px ${mathFontFam}`;
     ctx.textAlign = bestO.align;
     ctx.textBaseline = bestO.baseline;
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = Math.max(3, Math.round(3.5 * fontScale));
+    ctx.lineWidth = isBoldLabels ? Math.max(3, Math.round(3.5 * fontScale)) : Math.max(2.0, Math.round(2.2 * fontScale));
     ctx.lineJoin = 'round';
-    ctx.strokeText('O', bestO.x, bestO.y);
+    ctx.strokeText('O', drawOX, drawOY);
     ctx.fillStyle = '#000000';
-    ctx.fillText('O', bestO.x, bestO.y);
+    ctx.fillText('O', drawOX, drawOY);
+    if (isBoldLabels) {
+      ctx.lineWidth = 0.6;
+      ctx.strokeStyle = '#000000';
+      ctx.strokeText('O', drawOX, drawOY);
+    }
+
+    hitboxes.push({
+      id: 'O',
+      text: 'O',
+      type: 'origin',
+      x: (bestO.align === 'right' ? drawOX - 22 : drawOX) - 4,
+      y: (bestO.baseline === 'bottom' ? drawOY - 22 : drawOY) - 4,
+      width: 28,
+      height: 28
+    });
   }
 
   // 3. Vẽ Tiệm cận nếu có (Chuẩn nét đứt đen sắc nét SGK, hiện số tại các trục tọa độ)
@@ -1213,8 +1599,10 @@ export function renderGraphToCanvas(
   const numSteps = Math.max(450, Math.round((drawEnd - drawStart) * unitScale * 2));
   const step = (drawEnd - drawStart) / numSteps;
 
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = restrictInterval ? 2.8 : 2.4;
+  const curveColor = config.curveColor ?? '#000000';
+  const curveWidth = config.curveWidth ?? (restrictInterval ? 2.8 : 2.4);
+  ctx.strokeStyle = curveColor;
+  ctx.lineWidth = curveWidth;
   ctx.beginPath();
   let isDrawing = false;
 
@@ -1277,11 +1665,11 @@ export function renderGraphToCanvas(
       ctx.lineTo(axX, sy);
       ctx.stroke();
 
-      // Chấm tròn đầu mút (bán kính 4.0px)
+      // Chấm tròn đầu mút (bán kính nhỏ gọn thanh mảnh)
       ctx.setLineDash([]);
       ctx.fillStyle = '#000000';
       ctx.beginPath();
-      ctx.arc(sx, sy, 4.0, 0, Math.PI * 2);
+      ctx.arc(sx, sy, Math.max(2.2, dotRadius + 0.2), 0, Math.PI * 2);
       ctx.fill();
 
       // Đăng ký số tọa độ đầu mút
@@ -1290,16 +1678,21 @@ export function renderGraphToCanvas(
 
       // Ghi nhãn chữ A, B cạnh đầu mút (vị trí tối ưu không bao giờ đè đồ thị)
       const pointLabelFontSz = Math.round(21 * fontScale);
-      ctx.font = `italic bold ${pointLabelFontSz}px ${fontFam}`;
+      ctx.font = `italic ${isBoldLabels ? 'bold ' : 'normal '}${pointLabelFontSz}px ${mathFontFam}`;
       const bestPos = getBestPointLabelPos(sx, sy, ep.label, pointLabelFontSz);
       ctx.textAlign = bestPos.align;
       ctx.textBaseline = bestPos.baseline;
       ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = Math.max(3, Math.round(3.5 * fontScale));
+      ctx.lineWidth = isBoldLabels ? Math.max(3, Math.round(3.5 * fontScale)) : Math.max(2.0, Math.round(2.2 * fontScale));
       ctx.lineJoin = 'round';
       ctx.strokeText(ep.label, bestPos.x, bestPos.y);
       ctx.fillStyle = '#000000';
       ctx.fillText(ep.label, bestPos.x, bestPos.y);
+      if (isBoldLabels) {
+        ctx.lineWidth = 0.6;
+        ctx.strokeStyle = '#000000';
+        ctx.strokeText(ep.label, bestPos.x, bestPos.y);
+      }
     }
     ctx.restore();
   }
@@ -1336,12 +1729,15 @@ export function renderGraphToCanvas(
       ctx.lineTo(axX, sy);
       ctx.stroke();
 
-      // Chấm tròn cực trị (bán kính 4.0px)
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#000000';
-      ctx.beginPath();
-      ctx.arc(sx, sy, 4.0, 0, Math.PI * 2);
-      ctx.fill();
+      // Chấm tròn cực trị (bán kính nhỏ gọn thanh mảnh chuẩn SGK)
+      const showExtremaDots = config.showExtremaDots ?? (!isLatex);
+      if (showExtremaDots) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(sx, sy, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Đăng ký số tọa độ cực trị (mức ưu tiên cao nhất = 3)
       registerOxLabel(pt.x, pt.y < -0.1, 3);
@@ -1391,11 +1787,11 @@ export function renderGraphToCanvas(
       ctx.lineTo(axX, sy);
       ctx.stroke();
 
-      // Chấm tròn điểm (bán kính 4.0px)
+      // Chấm tròn điểm (bán kính nhỏ gọn thanh mảnh)
       ctx.setLineDash([]);
       ctx.fillStyle = '#000000';
       ctx.beginPath();
-      ctx.arc(sx, sy, 4.0, 0, Math.PI * 2);
+      ctx.arc(sx, sy, Math.max(2.2, dotRadius + 0.2), 0, Math.PI * 2);
       ctx.fill();
 
       // Đăng ký số tọa độ điểm người dùng (mức ưu tiên = 2)
@@ -1406,16 +1802,21 @@ export function renderGraphToCanvas(
       if (cp.label && cp.label.trim()) {
         const lbl = cp.label.trim();
         const pointLabelFontSz = Math.round(21 * fontScale);
-        ctx.font = `italic bold ${pointLabelFontSz}px ${fontFam}`;
+        ctx.font = `italic ${isBoldLabels ? 'bold ' : 'normal '}${pointLabelFontSz}px ${mathFontFam}`;
         const bestPos = getBestPointLabelPos(sx, sy, lbl, pointLabelFontSz);
         ctx.textAlign = bestPos.align;
         ctx.textBaseline = bestPos.baseline;
         ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = Math.max(3, Math.round(3.5 * fontScale));
+        ctx.lineWidth = isBoldLabels ? Math.max(3, Math.round(3.5 * fontScale)) : Math.max(2.0, Math.round(2.2 * fontScale));
         ctx.lineJoin = 'round';
         ctx.strokeText(lbl, bestPos.x, bestPos.y);
         ctx.fillStyle = '#000000';
         ctx.fillText(lbl, bestPos.x, bestPos.y);
+        if (isBoldLabels) {
+          ctx.lineWidth = 0.6;
+          ctx.strokeStyle = '#000000';
+          ctx.strokeText(lbl, bestPos.x, bestPos.y);
+        }
       }
     }
     ctx.restore();
@@ -1431,20 +1832,17 @@ export function renderGraphToCanvas(
       if (Math.abs(pt.x) < 0.2 && Math.abs(pt.y) < 0.2) continue;
       if (pt.x < plotMinX || pt.x > plotMaxX || pt.y < plotMinY || pt.y > plotMaxY) continue;
 
-      // CHỈ HIỆN GIAO ĐIỂM VỚI Ox KHI KẾT QUẢ LÀ SỐ NGUYÊN
-      if (pt.axis === 'Ox') {
-        const isInteger = Math.abs(pt.x - Math.round(pt.x)) < 1e-3;
-        if (!isInteger) continue;
-      }
-
       const sx = toScreenX(pt.x);
       const sy = toScreenY(pt.y);
 
-      // Chấm tròn tại giao điểm
-      ctx.fillStyle = '#000000';
-      ctx.beginPath();
-      ctx.arc(sx, sy, 4.0, 0, Math.PI * 2);
-      ctx.fill();
+      // Chấm tròn tại giao điểm (bán kính nhỏ gọn thanh mảnh chuẩn SGK)
+      const showIntersectionDots = config.showIntersectionDots ?? (!isLatex);
+      if (showIntersectionDots) {
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(sx, sy, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Đăng ký số giao điểm (mức ưu tiên = 1)
       if (pt.axis === 'Ox') {
@@ -1467,46 +1865,171 @@ export function renderGraphToCanvas(
 
   // Vẽ các số trên trục Ox
   for (const item of oxLabelsList) {
-    drawMathText(ctx, item.text, item.sx + (item.offsetX ?? 0), axY + item.offsetY, {
+    const drawX = item.sx + (item.offsetX ?? 0);
+    const drawY = axY + item.offsetY;
+    drawMathText(ctx, item.text, drawX, drawY, {
       fontSize: numFontSz,
-      isBold: true,
-      fontFamily: fontFam,
+      isBold: isBoldLabels,
+      fontFamily: numFontFam,
       align: 'center',
       withHalo: true,
-      haloWidth: Math.max(3, Math.round(3.5 * fontScale)),
+      haloWidth: isBoldLabels ? Math.max(3, Math.round(3.5 * fontScale)) : Math.max(2.0, Math.round(2.5 * fontScale)),
       haloColor: '#FFFFFF',
       useRectHalo: false
+    });
+
+    const isFrac = item.text.includes('/');
+    const tW = getTextWidthEst(item.text, numFontSz);
+    const tH = isFrac ? numFontSz * 0.9 : numFontSz * 0.55;
+    hitboxes.push({
+      id: `ox_${item.text}`,
+      text: item.text,
+      type: 'ox',
+      val: item.val,
+      x: drawX - tW / 2 - 4,
+      y: drawY - tH - 4,
+      width: tW + 8,
+      height: tH * 2 + 8
     });
   }
 
   // Vẽ các số trên trục Oy
   for (const item of oyLabelsList) {
-    drawMathText(ctx, item.text, axX + item.offsetX, item.sy + (item.offsetY ?? 0), {
+    const drawX = axX + item.offsetX;
+    const drawY = item.sy + (item.offsetY ?? 0);
+    drawMathText(ctx, item.text, drawX, drawY, {
       fontSize: numFontSz,
-      isBold: true,
-      fontFamily: fontFam,
+      isBold: isBoldLabels,
+      fontFamily: numFontFam,
       align: item.align,
       withHalo: true,
-      haloWidth: Math.max(3, Math.round(3.5 * fontScale)),
+      haloWidth: isBoldLabels ? Math.max(3, Math.round(3.5 * fontScale)) : Math.max(2.0, Math.round(2.5 * fontScale)),
       haloColor: '#FFFFFF',
       useRectHalo: false
     });
+
+    const isFrac = item.text.includes('/');
+    const tW = getTextWidthEst(item.text, numFontSz);
+    const tH = isFrac ? numFontSz * 0.9 : numFontSz * 0.55;
+    hitboxes.push({
+      id: `oy_${item.text}`,
+      text: item.text,
+      type: 'oy',
+      val: item.val,
+      x: (item.align === 'right' ? drawX - tW - 4 : drawX - 4),
+      y: drawY - tH - 4,
+      width: tW + 8,
+      height: tH * 2 + 8
+    });
+  }
+
+  // =========================================================================
+  // 8. VẼ CÁC TEXT / KÝ HIỆU TÙY BIẾN DO NGƯỜI DÙNG THÊM VÀO ĐỒ THỊ (CUSTOM TEXTS)
+  // Có hỗ trợ kéo thả trực tiếp bằng chuột, viền Halo trắng để không bị đồ thị che
+  // =========================================================================
+  if (config.customTexts && config.customTexts.length > 0) {
+    for (const item of config.customTexts) {
+      if (!item.text || !item.text.trim()) continue;
+      const sx = toScreenX(item.x);
+      const sy = toScreenY(item.y);
+
+      // Nếu nằm quá xa ngoài khung vẽ, bỏ qua
+      if (sx < -120 || sx > width + 120 || sy < -120 || sy > height + 120) continue;
+
+      const tFontSize = Math.round((item.fontSize ?? 22) * fontScale);
+      const tBold = item.isBold ?? isBoldLabels;
+      const tItalic = item.isItalic ?? true;
+      const tColor = item.color ?? '#000000';
+
+      drawMathText(ctx, item.text, sx, sy, {
+        fontSize: tFontSize,
+        isBold: tBold,
+        isItalic: tItalic,
+        color: tColor,
+        fontFamily: isLatex ? mathFontFam : fontFam,
+        align: 'center',
+        withHalo: true,
+        haloWidth: tBold ? Math.max(3, Math.round(3.5 * fontScale)) : Math.max(2.2, Math.round(2.6 * fontScale)),
+        haloColor: '#FFFFFF',
+        useRectHalo: false
+      });
+
+      const tW = getTextWidthEst(item.text, tFontSize);
+      const tH = tFontSize;
+
+      // Khung viền nét đứt khi text đang được chọn trực tiếp trên đồ thị
+      if (options?.selectedCustomTextId === item.id) {
+        ctx.save();
+        ctx.strokeStyle = '#0D9488'; // Teal-600
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(sx - tW / 2 - 4, sy - tH / 2 - 2, tW + 8, tH + 4);
+        ctx.restore();
+      }
+
+      hitboxes.push({
+        id: `custom_text_${item.id}`,
+        text: item.text,
+        type: 'custom_text',
+        customTextId: item.id,
+        x: sx - tW / 2 - 6,
+        y: sy - tH / 2 - 6,
+        width: tW + 12,
+        height: tH + 12
+      });
+    }
   }
 
   ctx.restore();
+  return { hitboxes, unitScale };
 }
 
-function drawArrowHead(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number) {
-  const headLen = 12;
+function drawArrowHead(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, isStealth = true) {
+  const headLen = isStealth ? 10.5 : 12;
+  const headHalfW = isStealth ? 3.8 : 4.5;
+  const notch = isStealth ? 2.2 : 0;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  ctx.lineTo(-headLen, -4.5);
-  ctx.lineTo(-headLen, 4.5);
+  ctx.lineTo(-headLen, -headHalfW);
+  if (notch > 0) {
+    ctx.lineTo(-headLen + notch, 0);
+  }
+  ctx.lineTo(-headLen, headHalfW);
   ctx.closePath();
   ctx.fillStyle = '#000000';
   ctx.fill();
   ctx.restore();
+}
+
+/**
+ * Tính giá trị xấp xỉ diện tích hình phẳng giới hạn bởi f(x) và g(x) trên [a; b]
+ * theo công thức tích phân số Simpson: S = \int_a^b |f(x) - g(x)| dx
+ */
+export function calcDefiniteIntegral(
+  f: (x: number) => number | null,
+  g: (x: number) => number,
+  a: number,
+  b: number,
+  n = 200
+): number {
+  const minX = Math.min(a, b);
+  const maxX = Math.max(a, b);
+  if (maxX - minX < 1e-9) return 0;
+
+  const steps = n % 2 === 0 ? n : n + 1;
+  const h = (maxX - minX) / steps;
+  let sum = 0;
+
+  for (let i = 0; i <= steps; i++) {
+    const x = minX + i * h;
+    const yF = f(x) ?? 0;
+    const yG = g(x);
+    const diff = Math.abs(yF - yG);
+    const weight = (i === 0 || i === steps) ? 1 : (i % 2 === 1 ? 4 : 2);
+    sum += weight * diff;
+  }
+  return (h / 3) * sum;
 }

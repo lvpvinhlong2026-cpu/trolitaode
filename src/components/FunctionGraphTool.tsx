@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   TrendingUp, Table, Copy, Download, CheckCircle2, RefreshCw, 
   Sparkles, Layers, Sliders, Eye, HelpCircle, Check, Compass,
-  Type, Ruler, Hash
+  Type, Ruler, Hash, Move, Crosshair, RotateCcw, Plus, Trash2, Palette, Bold, X,
+  Crop
 } from 'lucide-react';
 import { 
   analyzeFunction, 
@@ -17,59 +18,62 @@ import {
   parseFunctionCoeffs,
   formatPolyExpr
 } from '../utils/bbtEngine';
+import { cropCanvasToContent } from '../utils/dpiUtils';
 import { 
   renderGraphToCanvas, 
   GraphConfig, 
   evalGraphFunction, 
   formatNumDisplay,
-  getIntervalMinMax
+  getIntervalMinMax,
+  GraphLabelHitbox,
+  CustomTextAnnotation,
+  calcDefiniteIntegral
 } from '../utils/functionGraphEngine';
-import { copyCroppedImageToClipboard, downloadCroppedImage } from '../utils/imageCropper';
+import InequalityGraphTool from './InequalityGraphTool';
+import NumberLineTool from './NumberLineTool';
+import MathFontSelector, { MathFontChoice, MATH_FONT_FAMILIES } from './MathFontSelector';
 
 interface Props {
   apiKey?: string;
   model?: string;
+  onNavigateToBBT?: () => void;
+  onInsertImage?: (dataUrl: string) => void;
 }
 
-export default function FunctionGraphTool({ apiKey, model }: Props) {
-  const [activeSubTab, setActiveSubTab] = useState<'bbt' | 'graph'>('bbt');
+export default function FunctionGraphTool({ apiKey, model, onNavigateToBBT, onInsertImage }: Props) {
+  const [activeSubTab, setActiveSubTab] = useState<'graph' | 'inequality' | 'number_line'>('graph');
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [fontScale, setFontScale] = useState<number>(1.0);
-  const [graphFont, setGraphFont] = useState<string>('times');
+  const [graphFont, setGraphFont] = useState<MathFontChoice>('times');
 
   // Chuyển đổi tên font key thành chuỗi font-family chuẩn CSS/Canvas
   const getFontFamilyString = (fontKey: string) => {
-    switch (fontKey) {
-      case 'cambria':
-        return '"Cambria Math", "Cambria", serif';
-      case 'latex':
-        return '"KaTeX_Math", "KaTeX_Main", "Latin Modern Roman", "Computer Modern", serif';
-      case 'sans':
-        return '"Be Vietnam Pro", system-ui, sans-serif';
-      case 'times':
-      default:
-        return '"Times New Roman", "STIX Two Text", "Cambria Math", serif';
-    }
+    if (fontKey === 'latex') return MATH_FONT_FAMILIES.latex;
+    return MATH_FONT_FAMILIES.times;
   };
 
-  // ==========================================
-  // STATE CHO TAB BẢNG BIẾN THIÊN (BBT)
-  // ==========================================
-  const [bbtMode, setBbtMode] = useState<'coeffs' | 'text'>('coeffs');
-  const [bbtType, setBbtType] = useState<'rational_2_1' | 'rational_1_1' | 'cubic' | 'quartic'>('rational_2_1');
-  const [bbtCoeffs, setBbtCoeffs] = useState({
-    a: 1,
-    b: -1,
-    c: 1,
-    d: 1,
-    e: -1
-  });
-  const [bbtFnInput, setBbtFnInput] = useState('(x^2 - x + 1)/(x - 1)');
-  const [bbtUseInterval, setBbtUseInterval] = useState<boolean>(false);
-  const [bbtInterval, setBbtInterval] = useState<{ a: number; b: number }>({ a: 0, b: 2 });
-  const [bbtMinMax, setBbtMinMax] = useState<IntervalMinMaxInfo | null>(null);
-  const bbtCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [bbtDataUrl, setBbtDataUrl] = useState<string>('');
+  // Preload KaTeX và các phông toán học để Canvas vẽ chuẩn xác 100% không bị fallback
+  const [fontsReady, setFontsReady] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined' && document.fonts) {
+      Promise.all([
+        document.fonts.load('20px KaTeX_Main'),
+        document.fonts.load('bold 20px KaTeX_Main'),
+        document.fonts.load('italic 20px KaTeX_Math'),
+        document.fonts.load('italic bold 20px KaTeX_Math'),
+        document.fonts.load('italic 23px KaTeX_Math'),
+        document.fonts.load('20px "Times New Roman"'),
+        document.fonts.load('20px "Cambria Math"')
+      ]).then(() => {
+        setFontsReady(true);
+      }).catch(() => {
+        setFontsReady(true);
+      });
+    } else {
+      setFontsReady(true);
+    }
+  }, []);
 
   // ==========================================
   // STATE CHO TAB ĐỒ THỊ OXY
@@ -98,7 +102,12 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
     intervalA: 0,
     intervalB: 2,
     intervalMode: 'highlight',
-    showIntervalEndpoints: true
+    showIntervalEndpoints: true,
+    curveWidth: 2.4,
+    curveColor: '#000000',
+    axisWidth: 1.8,
+    isBoldLabels: true,
+    customTexts: []
   });
   const [graphMode, setGraphMode] = useState<'coeffs' | 'text'>('coeffs');
   const [graphFnInput, setGraphFnInput] = useState<string>('(x^2 - x + 1)/(x - 1)');
@@ -125,135 +134,487 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
   };
   const graphCanvasRef = useRef<HTMLCanvasElement>(null);
   const [graphDataUrl, setGraphDataUrl] = useState<string>('');
+  const currentUnitScaleRef = useRef<number>(36);
 
-  // Render BBT
-  useEffect(() => {
-    if (bbtCanvasRef.current && activeSubTab === 'bbt') {
-      try {
-        let analyzed: BBTData;
-        if (bbtUseInterval) {
-          const res = bbtMode === 'coeffs'
-            ? analyzeFromCoeffsOnInterval(
-                bbtType,
-                bbtCoeffs.a,
-                bbtCoeffs.b,
-                bbtCoeffs.c,
-                bbtCoeffs.d,
-                bbtCoeffs.e,
-                bbtInterval.a,
-                bbtInterval.b
-              )
-            : analyzeFunctionOnInterval(bbtFnInput, bbtInterval.a, bbtInterval.b);
-          analyzed = res.bbt;
-          setBbtMinMax(res.minMax);
-        } else {
-          setBbtMinMax(null);
-          if (bbtMode === 'coeffs') {
-            analyzed = analyzeFromCoeffs(
-              bbtType,
-              bbtCoeffs.a,
-              bbtCoeffs.b,
-              bbtCoeffs.c,
-              bbtCoeffs.d,
-              bbtCoeffs.e
-            );
-          } else {
-            analyzed = analyzeFunction(bbtFnInput);
-          }
-        }
-        renderBBTToCanvas(analyzed, bbtCanvasRef.current, 2.4, { 
-          fontSizeScale: fontScale,
-          fontFamily: getFontFamilyString(graphFont)
-        });
-        setBbtDataUrl(bbtCanvasRef.current.toDataURL('image/png'));
-      } catch (err) {
-        console.error('Lỗi phân tích hàm số BBT:', err);
-      }
+  // STATE KÉO THẢ NHÃN & HỆ TRỤC (Origin O & Axis Numbers Dragging / Panning)
+  const [labelHitboxes, setLabelHitboxes] = useState<GraphLabelHitbox[]>([]);
+  const [hoveredLabelId, setHoveredLabelId] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<{
+    active: boolean;
+    type: 'label' | 'pan';
+    hitbox?: GraphLabelHitbox;
+    startMouseX: number;
+    startMouseY: number;
+    initialOffset?: { x: number; y: number };
+    initialViewport?: { xMin: number; xMax: number; yMin: number; yMax: number };
+  } | null>(null);
+
+  // STATE THÊM TEXT / KÝ HIỆU TÙY BIẾN VÀO ĐỒ THỊ
+  const [newTextContent, setNewTextContent] = useState<string>('(C)');
+  const [newTextColor, setNewTextColor] = useState<string>('#000000');
+  const [newTextSize, setNewTextSize] = useState<number>(22);
+  const [selectedCustomTextId, setSelectedCustomTextId] = useState<string | null>(null);
+
+  const handleAddCustomText = (textToAdd?: string) => {
+    const text = (textToAdd !== undefined ? textToAdd : newTextContent).trim();
+    if (!text) return;
+    const existing = graphConfig.customTexts ?? [];
+    const count = existing.length;
+    const defX = Math.round(((graphConfig.xMax ?? 5.5) * 0.45 + (count % 3) * 0.7) * 10) / 10;
+    const defY = Math.round(((graphConfig.yMax ?? 5.5) * 0.55 - Math.floor(count / 3) * 0.8) * 10) / 10;
+    const newAnnotation: CustomTextAnnotation = {
+      id: 'txt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      text,
+      x: defX,
+      y: defY,
+      fontSize: newTextSize,
+      color: newTextColor,
+      isBold: graphConfig.isBoldLabels ?? true,
+      isItalic: true
+    };
+    setGraphConfig(prev => ({
+      ...prev,
+      customTexts: [...(prev.customTexts ?? []), newAnnotation]
+    }));
+    setSelectedCustomTextId(newAnnotation.id);
+  };
+
+  const handleRemoveCustomText = (id: string) => {
+    setGraphConfig(prev => ({
+      ...prev,
+      customTexts: (prev.customTexts ?? []).filter(t => t.id !== id)
+    }));
+    if (selectedCustomTextId === id) {
+      setSelectedCustomTextId(null);
     }
-  }, [bbtCoeffs, bbtType, bbtMode, bbtFnInput, bbtUseInterval, bbtInterval, activeSubTab, fontScale, graphFont]);
+  };
+
+  // Phím tắt xóa text tùy biến trực tiếp trên đồ thị (Delete / Backspace)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedCustomTextId) {
+        const target = e.target as HTMLElement;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        handleRemoveCustomText(selectedCustomTextId);
+        setSelectedCustomTextId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCustomTextId]);
 
   // Render Đồ thị Oxy
   useEffect(() => {
     if (graphCanvasRef.current && activeSubTab === 'graph') {
       try {
-        renderGraphToCanvas(graphConfig, graphCanvasRef.current, 2.4, { 
+        const result = renderGraphToCanvas(graphConfig, graphCanvasRef.current, 2.4, { 
           fontSizeScale: fontScale,
-          fontFamily: getFontFamilyString(graphFont)
+          fontFamily: getFontFamilyString(graphFont),
+          selectedCustomTextId
         });
-        setGraphDataUrl(graphCanvasRef.current.toDataURL('image/png'));
+        if (result && result.hitboxes) {
+          setLabelHitboxes(result.hitboxes);
+        }
+        if (result && result.unitScale) {
+          currentUnitScaleRef.current = result.unitScale;
+        }
+        if (graphCanvasRef.current) {
+          const cropped = cropCanvasToContent(graphCanvasRef.current, 6);
+          setGraphDataUrl(cropped.toDataURL('image/png'));
+        }
       } catch (err) {
         console.error('Lỗi render đồ thị Oxy:', err);
       }
     }
-  }, [graphConfig, activeSubTab, fontScale, graphFont]);
+  }, [graphConfig, activeSubTab, fontScale, graphFont, fontsReady, selectedCustomTextId]);
 
-  // Sao chép ảnh vào Clipboard (Tự động cắt sát bao hình padding ~24px, nhúng 300 DPI tối ưu Word)
+  // Tọa độ chuột trong hệ tọa độ canvas CSS (440 x 400)
+  const getCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = graphCanvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = 440 / (rect.width || 440);
+    const scaleY = 400 / (rect.height || 400);
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  };
+
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoords(e);
+    // Tìm hitbox gần nhất được click (với padding 6px cho dễ click)
+    const hit = labelHitboxes.find(h => 
+      x >= h.x - 6 && x <= h.x + h.width + 6 && 
+      y >= h.y - 6 && y <= h.y + h.height + 6
+    );
+
+    if (hit && hit.type === 'custom_text' && hit.customTextId) {
+      setSelectedCustomTextId(hit.customTextId);
+    } else if (!hit) {
+      setSelectedCustomTextId(null);
+    }
+
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    if (hit) {
+      let initialOffset = { x: 0, y: 0 };
+      if (hit.type === 'origin') {
+        initialOffset = { x: graphConfig.originOffset?.x ?? 0, y: graphConfig.originOffset?.y ?? 0 };
+      } else if (hit.type === 'ox') {
+        const custom = graphConfig.oxLabelOffsets?.[hit.text];
+        initialOffset = { x: custom?.offsetX ?? 0, y: custom?.offsetY ?? 0 };
+      } else if (hit.type === 'oy') {
+        const custom = graphConfig.oyLabelOffsets?.[hit.text];
+        initialOffset = { x: custom?.offsetX ?? 0, y: custom?.offsetY ?? 0 };
+      } else if (hit.type === 'axis_x') {
+        initialOffset = { x: graphConfig.axisLabelXOffset?.x ?? 0, y: graphConfig.axisLabelXOffset?.y ?? 0 };
+      } else if (hit.type === 'axis_y') {
+        initialOffset = { x: graphConfig.axisLabelYOffset?.x ?? 0, y: graphConfig.axisLabelYOffset?.y ?? 0 };
+      } else if (hit.type === 'custom_text' && hit.customTextId) {
+        const target = graphConfig.customTexts?.find(t => t.id === hit.customTextId);
+        if (target) {
+          initialOffset = { x: target.x, y: target.y };
+        }
+      }
+
+      setDragState({
+        active: true,
+        type: 'label',
+        hitbox: hit,
+        startMouseX: x,
+        startMouseY: y,
+        initialOffset
+      });
+    } else {
+      setDragState({
+        active: true,
+        type: 'pan',
+        startMouseX: e.clientX,
+        startMouseY: e.clientY,
+        initialViewport: {
+          xMin: graphConfig.xMin ?? -5.5,
+          xMax: graphConfig.xMax ?? 5.5,
+          yMin: graphConfig.yMin ?? -5.5,
+          yMax: graphConfig.yMax ?? 5.5
+        }
+      });
+    }
+  };
+
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoords(e);
+
+    if (!dragState?.active) {
+      const hit = labelHitboxes.find(h => 
+        x >= h.x - 6 && x <= h.x + h.width + 6 && 
+        y >= h.y - 6 && y <= h.y + h.height + 6
+      );
+      setHoveredLabelId(hit ? hit.id : null);
+      return;
+    }
+
+    if (dragState.type === 'label' && dragState.hitbox) {
+      const dx = Math.round(x - dragState.startMouseX);
+      const dy = Math.round(y - dragState.startMouseY);
+      const hit = dragState.hitbox;
+
+      if (hit.type === 'origin') {
+        setGraphConfig(prev => ({
+          ...prev,
+          originOffset: {
+            x: (dragState.initialOffset?.x ?? 0) + dx,
+            y: (dragState.initialOffset?.y ?? 0) + dy
+          }
+        }));
+      } else if (hit.type === 'ox') {
+        setGraphConfig(prev => ({
+          ...prev,
+          oxLabelOffsets: {
+            ...prev.oxLabelOffsets,
+            [hit.text]: {
+              ...prev.oxLabelOffsets?.[hit.text],
+              offsetX: (dragState.initialOffset?.x ?? 0) + dx,
+              offsetY: (dragState.initialOffset?.y ?? 0) + dy
+            }
+          }
+        }));
+      } else if (hit.type === 'oy') {
+        setGraphConfig(prev => ({
+          ...prev,
+          oyLabelOffsets: {
+            ...prev.oyLabelOffsets,
+            [hit.text]: {
+              ...prev.oyLabelOffsets?.[hit.text],
+              offsetX: (dragState.initialOffset?.x ?? 0) + dx,
+              offsetY: (dragState.initialOffset?.y ?? 0) + dy
+            }
+          }
+        }));
+      } else if (hit.type === 'axis_x') {
+        setGraphConfig(prev => ({
+          ...prev,
+          axisLabelXOffset: {
+            x: (dragState.initialOffset?.x ?? 0) + dx,
+            y: (dragState.initialOffset?.y ?? 0) + dy
+          }
+        }));
+      } else if (hit.type === 'axis_y') {
+        setGraphConfig(prev => ({
+          ...prev,
+          axisLabelYOffset: {
+            x: (dragState.initialOffset?.x ?? 0) + dx,
+            y: (dragState.initialOffset?.y ?? 0) + dy
+          }
+        }));
+      } else if (hit.type === 'custom_text' && hit.customTextId) {
+        const unitScale = currentUnitScaleRef.current || 36;
+        const mathDx = dx / unitScale;
+        const mathDy = -dy / unitScale;
+        setGraphConfig(prev => ({
+          ...prev,
+          customTexts: (prev.customTexts ?? []).map(t =>
+            t.id === hit.customTextId
+              ? {
+                  ...t,
+                  x: Math.round(((dragState.initialOffset?.x ?? 0) + mathDx) * 100) / 100,
+                  y: Math.round(((dragState.initialOffset?.y ?? 0) + mathDy) * 100) / 100
+                }
+              : t
+          )
+        }));
+      }
+    } else if (dragState.type === 'pan' && dragState.initialViewport) {
+      const canvas = graphCanvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const deltaScreenX = e.clientX - dragState.startMouseX;
+      const deltaScreenY = e.clientY - dragState.startMouseY;
+
+      const spanX = dragState.initialViewport.xMax - dragState.initialViewport.xMin;
+      const spanY = dragState.initialViewport.yMax - dragState.initialViewport.yMin;
+
+      const mathDx = -(deltaScreenX / (rect.width || 440)) * spanX;
+      const mathDy = (deltaScreenY / (rect.height || 400)) * spanY;
+
+      setGraphConfig(prev => ({
+        ...prev,
+        xMin: Math.round((dragState.initialViewport!.xMin + mathDx) * 100) / 100,
+        xMax: Math.round((dragState.initialViewport!.xMax + mathDx) * 100) / 100,
+        yMin: Math.round((dragState.initialViewport!.yMin + mathDy) * 100) / 100,
+        yMax: Math.round((dragState.initialViewport!.yMax + mathDy) * 100) / 100
+      }));
+    }
+  };
+
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (dragState?.active) {
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+      setDragState(null);
+    }
+  };
+
+  // Click chuột phải trên text để xóa ngay lập tức
+  const handleCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = graphCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = 440 / (rect.width || 440);
+    const scaleY = 400 / (rect.height || 400);
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
+    const hit = labelHitboxes.find(h => 
+      h.type === 'custom_text' &&
+      x >= h.x - 6 && x <= h.x + h.width + 6 && 
+      y >= h.y - 6 && y <= h.y + h.height + 6
+    );
+    if (hit && hit.customTextId) {
+      e.preventDefault();
+      handleRemoveCustomText(hit.customTextId);
+      setSelectedCustomTextId(null);
+    }
+  };
+
+  const handleResetLabels = () => {
+    setGraphConfig(prev => ({
+      ...prev,
+      originQuadrant: 'auto',
+      originOffset: undefined,
+      oxLabelOffsets: undefined,
+      oyLabelOffsets: undefined,
+      axisLabelXOffset: undefined,
+      axisLabelYOffset: undefined
+    }));
+  };
+
+  const handleRecenterOxy = () => {
+    const range = Math.abs(graphConfig.xMax ?? 5.5);
+    setGraphConfig(prev => ({
+      ...prev,
+      xMin: -range,
+      xMax: range,
+      yMin: -range,
+      yMax: range
+    }));
+  };
+
+  const getCanvasCursor = () => {
+    if (dragState?.active) {
+      return dragState.type === 'label' ? 'cursor-grabbing' : 'cursor-move';
+    }
+    if (hoveredLabelId) {
+      return 'cursor-grab';
+    }
+    return 'cursor-crosshair';
+  };
+
+  // Sao chép ảnh vào Clipboard (Tự động cắt sạch khoảng trắng thừa, nhúng 300 DPI tối ưu Word)
   const handleCopyImage = async (dataUrl: string, title: string) => {
     try {
-      const ok = await copyCroppedImageToClipboard(dataUrl, 300, 24);
-      if (ok) {
-        setCopySuccess(`Đã copy ảnh "${title}" (cắt sát viền 24px, 300 DPI)! Dán (Ctrl+V) vào Word ảnh sẽ tự động tràn đều trang và đậm nét.`);
-      } else {
-        setCopySuccess('Không thể copy trực tiếp. Vui lòng bấm "Tải PNG" hoặc chuột phải vào ảnh chọn Copy Image.');
+      let canvasToUse: HTMLCanvasElement | null = null;
+      if (graphCanvasRef.current) {
+        canvasToUse = cropCanvasToContent(graphCanvasRef.current, 6);
       }
+
+      if (canvasToUse) {
+        const blob = await new Promise<Blob | null>(resolve => canvasToUse!.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('Không tạo được blob');
+        const blobWithDpi = await addDpiToBlob(blob, 300);
+        const croppedDataUrl = canvasToUse.toDataURL('image/png');
+        const wordW = Math.round(canvasToUse.width / 2.5);
+        const wordH = Math.round(canvasToUse.height / 2.5);
+        const htmlSnippet = `<img src="${croppedDataUrl}" alt="${title}" width="${wordW}" height="${wordH}" style="display:inline-block; max-width:100%; height:auto;" />`;
+        const htmlBlob = new Blob([htmlSnippet], { type: 'text/html' });
+
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blobWithDpi, 'text/html': htmlBlob })
+          ]);
+        } catch {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blobWithDpi })
+          ]);
+        }
+      } else {
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const blobWithDpi = await addDpiToBlob(blob, 300);
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blobWithDpi })
+        ]);
+      }
+
+      setCopySuccess(`✅ Đã copy ảnh "${title}" (cắt sát viền, không chừa khoảng trắng)! Dán (Ctrl+V) vào Word ảnh sẽ to rõ chuẩn in ấn.`);
       setTimeout(() => setCopySuccess(null), 4500);
     } catch (err) {
       console.error('Lỗi copy ảnh:', err);
-      setCopySuccess('Vui lòng bấm "Tải PNG" hoặc chuột phải vào ảnh chọn Copy Image.');
+      setCopySuccess('Không thể copy trực tiếp. Vui lòng bấm "Tải PNG" hoặc chuột phải vào ảnh chọn Copy Image.');
       setTimeout(() => setCopySuccess(null), 4000);
     }
   };
 
-  // Tải ảnh PNG có nhúng 300 DPI và cắt sát bao hình 24px
+  // Tải ảnh PNG có nhúng 300 DPI (Cắt sạch khoảng trắng thừa)
   const handleDownloadImage = async (dataUrl: string, filename: string) => {
-    await downloadCroppedImage(dataUrl, filename, 300, 24);
+    try {
+      if (graphCanvasRef.current) {
+        const croppedCanvas = cropCanvasToContent(graphCanvasRef.current, 6);
+        const blob = await new Promise<Blob | null>(resolve => croppedCanvas.toBlob(resolve, 'image/png'));
+        if (blob) {
+          const blobWithDpi = await addDpiToBlob(blob, 300);
+          const url = URL.createObjectURL(blobWithDpi);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(url);
+          return;
+        }
+      }
+
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const blobWithDpi = await addDpiToBlob(blob, 300);
+      const url = URL.createObjectURL(blobWithDpi);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      a.click();
+    }
   };
+
+  // Lắng nghe sự kiện từ Ribbon Bar (kiểu Microsoft Word)
+  useEffect(() => {
+    const handleRibbonAction = (e: Event) => {
+      const ce = e as CustomEvent;
+      if (!ce.detail) return;
+      const { type, subtab, config, textExpr, fnType, inputMode } = ce.detail;
+      if (type === 'switch_subtab' && subtab) {
+        if (['graph', 'inequality', 'number_line'].includes(subtab)) {
+          setActiveSubTab(subtab);
+        }
+      } else if (type === 'select_fn_type' && fnType) {
+        const mappedType: GraphConfig['type'] = fnType === 'rational_1_1' ? 'rational' : fnType;
+        if (fnType === 'cubic') setGraphConfig(prev => ({ ...prev, type: 'cubic', a: 1, b: 0, c: -3, d: 1, e: 0 }));
+        else if (fnType === 'quartic') setGraphConfig(prev => ({ ...prev, type: 'quartic', a: 1, b: -2, c: -1, d: 0, e: 0 }));
+        else if (fnType === 'rational' || fnType === 'rational_1_1') setGraphConfig(prev => ({ ...prev, type: 'rational', a: 2, b: 1, c: 1, d: -1, e: 0 }));
+        else if (fnType === 'rational_2_1') setGraphConfig(prev => ({ ...prev, type: 'rational_2_1', a: 1, b: -1, c: 1, d: 1, e: -1 }));
+        else setGraphConfig(prev => ({ ...prev, type: mappedType }));
+      } else if (type === 'switch_input_mode' && inputMode) {
+        setGraphMode(inputMode);
+      } else if (type === 'copy_word') {
+        if (activeSubTab === 'graph' && graphDataUrl) {
+          handleCopyImage(graphDataUrl, 'Đồ thị Oxy');
+        }
+      } else if (type === 'open_crop') {
+        let urlToUse = graphDataUrl;
+        if (graphCanvasRef.current) {
+          const cropped = cropCanvasToContent(graphCanvasRef.current, 6);
+          urlToUse = cropped.toDataURL('image/png');
+        }
+        if (urlToUse) {
+          window.dispatchEvent(new CustomEvent('lvp_open_crop_modal', {
+            detail: {
+              dataUrl: urlToUse,
+              title: activeSubTab === 'graph' ? 'Đồ thị Oxy' : activeSubTab === 'inequality' ? 'Miền nghiệm BPT' : 'Trục số thực R'
+            }
+          }));
+        }
+      } else if (type === 'download_png') {
+        if (activeSubTab === 'graph' && graphDataUrl) {
+          handleDownloadImage(graphDataUrl, 'do_thi_oxy.png');
+        }
+      } else if (type === 'select_graph_preset' && config) {
+        setGraphConfig(prev => ({ ...prev, ...config }));
+        if (textExpr) setGraphFnInput(textExpr);
+      }
+    };
+    window.addEventListener('lvp_ribbon_action', handleRibbonAction);
+    return () => window.removeEventListener('lvp_ribbon_action', handleRibbonAction);
+  }, [activeSubTab, graphDataUrl]);
+
+  // Báo trạng thái lên Ribbon
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('lvp_graph_state_change', {
+      detail: { activeSubTab, graphConfigType: graphConfig.type, graphMode }
+    }));
+  }, [activeSubTab, graphConfig.type, graphMode]);
 
   return (
     <div className="flex flex-col w-full space-y-4">
-      {/* HEADER CÔNG CỤ */}
-      <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-teal-100 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-            <TrendingUp size={22} />
-          </div>
-          <div>
-            <h2 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
-              CÔNG CỤ ĐỒ THỊ HÀM SỐ & BẢNG BIẾN THIÊN (300 DPI)
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Tự động tính đạo hàm, cực trị, tiệm cận — Xuất ảnh độ nét cao chuẩn in ấn cho Microsoft Word & PowerPoint
-            </p>
-          </div>
-        </div>
-
-        {/* Chuyển tab giữa BBT và Đồ thị Oxy */}
-        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
-          <button
-            onClick={() => setActiveSubTab('bbt')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg transition-all ${
-              activeSubTab === 'bbt'
-                ? 'bg-teal-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <Table size={15} />
-            Bảng biến thiên (BBT)
-          </button>
-          <button
-            onClick={() => setActiveSubTab('graph')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg transition-all ${
-              activeSubTab === 'graph'
-                ? 'bg-teal-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            <TrendingUp size={15} />
-            Đồ thị Oxy
-          </button>
-        </div>
-      </div>
-
       {/* THÔNG BÁO COPY THÀNH CÔNG */}
       {copySuccess && (
         <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-fade-in shadow-xs">
@@ -262,332 +623,24 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
         </div>
       )}
 
-      {/* GIAO DIỆN CHÍNH: 2 CỘT TỐI ƯU KHÔNG GIAN */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* RENDER TAB 3: MIỀN NGHIỆM BPT BẬC NHẤT HAI ẨN (OXY) */}
+      {activeSubTab === 'inequality' && (
+        <InequalityGraphTool fontScale={fontScale} graphFont={graphFont} />
+      )}
+
+      {/* RENDER TAB 4: TRỤC SỐ & TẬP CON CỦA R (KHOẢNG, ĐOẠN, NỬA KHOẢNG) */}
+      {activeSubTab === 'number_line' && (
+        <NumberLineTool fontScale={fontScale} graphFont={graphFont} isBold={graphConfig.isBoldLabels !== false} />
+      )}
+
+      {/* RENDER TAB 1: ĐỒ THỊ OXY */}
+      {activeSubTab === 'graph' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* ========================================================= */}
         {/* CỘT TRÁI: ĐIỀU KHIỂN & CẤU HÌNH (5 CỘT) */}
         {/* ========================================================= */}
         <div className="lg:col-span-5 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-teal-100 dark:border-slate-800 shadow-xs space-y-4">
-          {/* TAB 1: BẢNG BIẾN THIÊN */}
-          {activeSubTab === 'bbt' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sliders size={14} className="text-teal-600" />
-                  Cấu hình hàm số:
-                </span>
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[10px] font-bold">
-                  <button
-                    onClick={() => setBbtMode('coeffs')}
-                    className={`px-2.5 py-1 rounded-md transition ${bbtMode === 'coeffs' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-500'}`}
-                  >
-                    Nhập hệ số (a,b,c,d,e)
-                  </button>
-                  <button
-                    onClick={() => setBbtMode('text')}
-                    className={`px-2.5 py-1 rounded-md transition ${bbtMode === 'text' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-500'}`}
-                  >
-                    Gõ biểu thức f(x)
-                  </button>
-                </div>
-              </div>
-
-              {bbtMode === 'coeffs' ? (
-                <div className="space-y-3">
-                  {/* Chọn dạng hàm */}
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { id: 'rational_2_1', label: 'Bậc 2 / 1: (ax²+bx+c)/(dx+e)', desc: 'Chương trình mới' },
-                      { id: 'rational_1_1', label: 'Phân thức: (ax+b)/(cx+d)', desc: '1 tiệm cận đứng, 1 ngang' },
-                      { id: 'cubic', label: 'Bậc 3: ax³+bx²+cx+d', desc: 'Có 2 hoặc 0 cực trị' },
-                      { id: 'quartic', label: 'Bậc 4: ax⁴+bx²+c', desc: 'Trùng phương (1 hoặc 3 cực trị)' },
-                    ].map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          setBbtType(t.id as any);
-                          if (t.id === 'rational_2_1') setBbtCoeffs({ a: 1, b: -1, c: 1, d: 1, e: -1 });
-                          if (t.id === 'rational_1_1') setBbtCoeffs({ ...bbtCoeffs, a: 2, b: 1, c: 1, d: -1 });
-                          if (t.id === 'cubic') setBbtCoeffs({ ...bbtCoeffs, a: 1, b: 0, c: -3, d: 0 });
-                          if (t.id === 'quartic') setBbtCoeffs({ ...bbtCoeffs, a: 1, b: -2, c: -3, d: 0, e: 0 });
-                        }}
-                        className={`p-2 rounded-xl border text-left font-bold transition ${
-                          bbtType === t.id
-                            ? 'bg-teal-50 dark:bg-teal-950 text-teal-800 dark:text-teal-200 border-teal-500 shadow-xs ring-1 ring-teal-400'
-                            : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        <div className="text-xs truncate">{t.label}</div>
-                        <div className="text-[10px] font-normal text-slate-400 truncate">{t.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Presets mẫu chuẩn SGK */}
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Mẫu bài thi chuẩn SGK:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {bbtType === 'rational_2_1' && [
-                        { label: '(x²-x+1)/(x-1)', a: 1, b: -1, c: 1, d: 1, e: -1 },
-                        { label: '(x²+x+1)/(x-1)', a: 1, b: 1, c: 1, d: 1, e: -1 },
-                        { label: '(x²-2x-3)/(x-1)', a: 1, b: -2, c: -3, d: 1, e: -1 },
-                        { label: '(-x²+2x+1)/(x+1)', a: -1, b: 2, c: 1, d: 1, e: 1 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setBbtCoeffs({ a: p.a, b: p.b, c: p.c, d: p.d, e: p.e })}
-                          className="px-2.5 py-1 text-[11px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-
-                      {bbtType === 'rational_1_1' && [
-                        { label: '(2x+1)/(x-1)', a: 2, b: 1, c: 1, d: -1 },
-                        { label: '(x-2)/(x+1)', a: 1, b: -2, c: 1, d: 1 },
-                        { label: '(-x+1)/(2x-3)', a: -1, b: 1, c: 2, d: -3 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setBbtCoeffs({ ...bbtCoeffs, a: p.a, b: p.b, c: p.c, d: p.d })}
-                          className="px-2.5 py-1 text-[11px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-
-                      {bbtType === 'cubic' && [
-                        { label: 'x³ - 3x', a: 1, b: 0, c: -3, d: 0 },
-                        { label: '-x³ + 3x² - 1', a: -1, b: 3, c: 0, d: -1 },
-                        { label: 'x³ - 3x² + 2', a: 1, b: -3, c: 0, d: 2 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setBbtCoeffs({ ...bbtCoeffs, a: p.a, b: p.b, c: p.c, d: p.d })}
-                          className="px-2.5 py-1 text-[11px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-
-                      {bbtType === 'quartic' && [
-                        { label: 'x⁴ - 2x² - 3', a: 1, b: -2, c: -3 },
-                        { label: '-x⁴ + 4x² + 1', a: -1, b: 4, c: 1 },
-                        { label: 'x⁴ + 2x²', a: 1, b: 2, c: 0 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setBbtCoeffs({ ...bbtCoeffs, a: p.a, b: p.b, c: p.c })}
-                          className="px-2.5 py-1 text-[11px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Nhập hệ số chi tiết */}
-                  <div className={`grid gap-2 pt-1 ${bbtType === 'rational_2_1' ? 'grid-cols-5' : bbtType === 'quartic' ? 'grid-cols-3' : 'grid-cols-4'}`}>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-500 block mb-0.5">a:</span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={bbtCoeffs.a}
-                        onChange={e => setBbtCoeffs({ ...bbtCoeffs, a: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-500 block mb-0.5">b:</span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={bbtCoeffs.b}
-                        onChange={e => setBbtCoeffs({ ...bbtCoeffs, b: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-500 block mb-0.5">c:</span>
-                      <input
-                        type="number"
-                        step="any"
-                        value={bbtCoeffs.c}
-                        onChange={e => setBbtCoeffs({ ...bbtCoeffs, c: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
-                      />
-                    </div>
-                    {bbtType !== 'quartic' && (
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">d:</span>
-                        <input
-                          type="number"
-                          step="any"
-                          value={bbtCoeffs.d}
-                          onChange={e => setBbtCoeffs({ ...bbtCoeffs, d: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
-                        />
-                      </div>
-                    )}
-                    {bbtType === 'rational_2_1' && (
-                      <div>
-                        <span className="text-[10px] font-bold text-teal-600 block mb-0.5">e:</span>
-                        <input
-                          type="number"
-                          step="any"
-                          value={bbtCoeffs.e}
-                          onChange={e => setBbtCoeffs({ ...bbtCoeffs, e: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1.5 text-xs text-center border-2 border-teal-600 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold text-teal-700 dark:text-teal-300"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Thông tin tiệm cận / không xác định */}
-                  {(bbtType === 'rational_2_1' || bbtType === 'rational_1_1') && (
-                    <div className="p-2.5 bg-teal-50 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800 text-xs text-teal-800 dark:text-teal-300 font-medium">
-                      ⚡ Tiệm cận đứng:{' '}
-                      <strong>
-                        x = {bbtType === 'rational_2_1' ? formatNum(-bbtCoeffs.e / (bbtCoeffs.d || 1)) : formatNum(-bbtCoeffs.d / (bbtCoeffs.c || 1))}
-                      </strong>{' '}
-                      (thể hiện bằng vạch kép <strong className="font-mono">||</strong> và giới hạn <strong className="font-mono">±∞</strong>)
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* Chế độ gõ biểu thức tự do */
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={bbtFnInput}
-                    onChange={e => setBbtFnInput(e.target.value)}
-                    placeholder="(x^2 - x + 1)/(x - 1)"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-800 text-sm font-mono font-bold text-teal-900 dark:text-teal-100 outline-none"
-                  />
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { label: 'Bậc 2/1: (x²-x+1)/(x-1)', val: '(x^2-x+1)/(x-1)' },
-                      { label: 'Phân thức: (2x+1)/(x-1)', val: '(2x+1)/(x-1)' },
-                      { label: 'Bậc 3: x³ - 3x', val: 'x^3 - 3*x' },
-                      { label: 'Bậc 4: x⁴ - 2x² - 3', val: 'x^4 - 2*x^2 - 3' },
-                    ].map((preset, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setBbtFnInput(preset.val)}
-                        className="px-2 py-0.5 text-[10px] rounded border font-semibold bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-teal-50"
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* KHẢO SÁT BBT TRÊN ĐOẠN [a; b] */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-teal-800 dark:text-teal-300">
-                    <input
-                      type="checkbox"
-                      checked={bbtUseInterval}
-                      onChange={e => setBbtUseInterval(e.target.checked)}
-                      className="rounded text-teal-600"
-                    />
-                    📊 Khảo sát BBT trên đoạn [a; b]
-                  </label>
-                  {bbtUseInterval && (
-                    <span className="text-[10px] font-mono font-bold bg-teal-100 dark:bg-teal-900/80 text-teal-800 dark:text-teal-200 px-2 py-0.5 rounded">
-                      [{bbtInterval.a}; {bbtInterval.b}]
-                    </span>
-                  )}
-                </div>
-
-                {bbtUseInterval && (
-                  <div className="p-3 bg-teal-50/70 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800/60 space-y-2.5 animate-fade-in text-xs">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 block mb-1">Đầu mút a:</span>
-                        <input
-                          type="number"
-                          step="any"
-                          value={bbtInterval.a}
-                          onChange={e => setBbtInterval({ ...bbtInterval, a: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1 text-xs text-center border rounded-lg bg-white dark:bg-slate-800 font-mono font-bold"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 block mb-1">Đầu mút b:</span>
-                        <input
-                          type="number"
-                          step="any"
-                          value={bbtInterval.b}
-                          onChange={e => setBbtInterval({ ...bbtInterval, b: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1 text-xs text-center border rounded-lg bg-white dark:bg-slate-800 font-mono font-bold"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Presets đoạn thường gặp */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-slate-400">Chọn nhanh:</span>
-                      {[
-                        { a: 0, b: 2 },
-                        { a: -1, b: 2 },
-                        { a: -2, b: 2 },
-                        { a: 0, b: 3 },
-                        { a: 1, b: 3 },
-                        { a: -3, b: 0 }
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setBbtInterval({ a: p.a, b: p.b })}
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition ${
-                            bbtInterval.a === p.a && bbtInterval.b === p.b
-                              ? 'bg-teal-600 text-white shadow-2xs'
-                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-teal-50'
-                          }`}
-                        >
-                          [{p.a}; {p.b}]
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Kết quả GTLN / GTNN */}
-                    {bbtMinMax && !bbtMinMax.hasAsymptote && bbtMinMax.maxVal !== null && bbtMinMax.minVal !== null && (
-                      <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-teal-200 dark:border-teal-800 space-y-1 text-[11px]">
-                        <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400 font-bold">
-                          <span>✨ GTLN (Max):</span>
-                          <span>
-                            max = {formatNum(bbtMinMax.maxVal)} (tại x = {bbtMinMax.maxAt.map(formatNum).join(', ')})
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-blue-700 dark:text-blue-400 font-bold">
-                          <span>✨ GTNN (Min):</span>
-                          <span>
-                            min = {formatNum(bbtMinMax.minVal)} (tại x = {bbtMinMax.minAt.map(formatNum).join(', ')})
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {bbtMinMax?.hasAsymptote && (
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
-                        ⚠️ Trong đoạn [{bbtInterval.a}; {bbtInterval.b}] có điểm gián đoạn (tiệm cận đứng), hàm số không đạt GTLN/GTNN hữu hạn.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: ĐỒ THỊ OXY */}
-          {activeSubTab === 'graph' && (
-            <div className="space-y-4">
+          <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                   <Sliders size={14} className="text-teal-600" />
@@ -647,75 +700,108 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                     ))}
                   </div>
 
-                  {/* Presets mẫu chuẩn SGK cho Đồ thị */}
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Mẫu bài thi chuẩn SGK:
+                  {/* Mẫu bài thi chuẩn SGK cho Đồ thị */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                      Mẫu SGK:
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {graphConfig.type === 'rational_2_1' && [
-                        { label: '(x²-x+1)/(x-1)', a: 1, b: -1, c: 1, d: 1, e: -1 },
-                        { label: '(x²+x+1)/(x-1)', a: 1, b: 1, c: 1, d: 1, e: -1 },
-                        { label: '(x²-2x-3)/(x-1)', a: 1, b: -2, c: -3, d: 1, e: -1 },
-                        { label: '(-x²+2x+1)/(x+1)', a: -1, b: 2, c: 1, d: 1, e: 1 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setGraphConfig({ ...graphConfig, a: p.a, b: p.b, c: p.c, d: p.d, e: p.e })}
-                          className="px-2 py-0.5 text-[10px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-
-                      {graphConfig.type === 'rational' && [
-                        { label: '(2x+1)/(x-1)', a: 2, b: 1, c: 1, d: -1 },
-                        { label: '(x-2)/(x+1)', a: 1, b: -2, c: 1, d: 1 },
-                        { label: '(-x+1)/(2x-3)', a: -1, b: 1, c: 2, d: -3 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setGraphConfig({ ...graphConfig, a: p.a, b: p.b, c: p.c, d: p.d, e: 0 })}
-                          className="px-2 py-0.5 text-[10px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-
-                      {graphConfig.type === 'cubic' && [
-                        { label: 'x³ - 3x + 1', a: 1, b: 0, c: -3, d: 1 },
-                        { label: 'x³ - 3x', a: 1, b: 0, c: -3, d: 0 },
-                        { label: '-x³ + 3x² - 1', a: -1, b: 3, c: 0, d: -1 },
-                        { label: 'x³ - 3x² + 2', a: 1, b: -3, c: 0, d: 2 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setGraphConfig({ ...graphConfig, a: p.a, b: p.b, c: p.c, d: p.d, e: 0 })}
-                          className="px-2 py-0.5 text-[10px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-
-                      {graphConfig.type === 'quartic' && [
-                        { label: 'x⁴ - 2x² - 1', a: 1, b: -2, c: -1 },
-                        { label: 'x⁴ - 2x² - 3', a: 1, b: -2, c: -3 },
-                        { label: '-x⁴ + 4x² + 1', a: -1, b: 4, c: 1 },
-                        { label: 'x⁴ + 2x²', a: 1, b: 2, c: 0 },
-                      ].map((p, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setGraphConfig({ ...graphConfig, a: p.a, b: p.b, c: p.c, d: 0, e: 0 })}
-                          className="px-2 py-0.5 text-[10px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        if (graphConfig.type === 'rational_2_1') {
+                          const presets = [
+                            { id: 'model', a: 1, b: 1, c: 4, d: 1, e: 1, isModel: true },
+                            { id: '1', a: 1, b: -1, c: 1, d: 1, e: -1 },
+                            { id: '2', a: 1, b: 1, c: 1, d: 1, e: -1 },
+                            { id: '3', a: 1, b: -2, c: -3, d: 1, e: -1 },
+                            { id: '4', a: -1, b: 2, c: 1, d: 1, e: 1 },
+                          ];
+                          const p = presets.find(x => x.id === val);
+                          if (p) {
+                            setGraphConfig(prev => ({
+                              ...prev,
+                              a: p.a, b: p.b, c: p.c, d: p.d, e: p.e,
+                              ...(p.isModel ? {
+                                isBoldLabels: false,
+                                curveWidth: 2.0,
+                                axisWidth: 1.4,
+                                showExtremaDots: false,
+                                showIntersectionDots: false,
+                                xMin: -6.5,
+                                xMax: 6.5,
+                                yMin: -7.5,
+                                yMax: 7.5,
+                                originQuadrant: 'top-left'
+                              } : {})
+                            }));
+                            if (p.isModel) setGraphFont('latex');
+                          }
+                        } else if (graphConfig.type === 'rational') {
+                          const presets = [
+                            { id: '1', a: 2, b: 1, c: 1, d: -1 },
+                            { id: '2', a: 1, b: -2, c: 1, d: 1 },
+                            { id: '3', a: -1, b: 1, c: 2, d: -3 },
+                          ];
+                          const p = presets.find(x => x.id === val);
+                          if (p) setGraphConfig(prev => ({ ...prev, a: p.a, b: p.b, c: p.c, d: p.d, e: 0 }));
+                        } else if (graphConfig.type === 'cubic') {
+                          const presets = [
+                            { id: '1', a: 1, b: 0, c: -3, d: 1 },
+                            { id: '2', a: 1, b: 0, c: -3, d: 0 },
+                            { id: '3', a: -1, b: 3, c: 0, d: -1 },
+                            { id: '4', a: 1, b: -3, c: 0, d: 2 },
+                          ];
+                          const p = presets.find(x => x.id === val);
+                          if (p) setGraphConfig(prev => ({ ...prev, a: p.a, b: p.b, c: p.c, d: p.d, e: 0 }));
+                        } else if (graphConfig.type === 'quartic') {
+                          const presets = [
+                            { id: '1', a: 1, b: -2, c: -1 },
+                            { id: '2', a: 1, b: -2, c: -3 },
+                            { id: '3', a: -1, b: 4, c: 1 },
+                            { id: '4', a: 1, b: 2, c: 0 },
+                          ];
+                          const p = presets.find(x => x.id === val);
+                          if (p) setGraphConfig(prev => ({ ...prev, a: p.a, b: p.b, c: p.c, d: 0, e: 0 }));
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500 cursor-pointer"
+                    >
+                      <option value="">-- Chọn bài mẫu SGK nhanh --</option>
+                      {graphConfig.type === 'rational_2_1' && (
+                        <>
+                          <option value="model">⭐ (x²+x+4)/(x+1) [Hình mẫu LaTeX]</option>
+                          <option value="1">(x²-x+1)/(x-1)</option>
+                          <option value="2">(x²+x+1)/(x-1)</option>
+                          <option value="3">(x²-2x-3)/(x-1)</option>
+                          <option value="4">(-x²+2x+1)/(x+1)</option>
+                        </>
+                      )}
+                      {graphConfig.type === 'rational' && (
+                        <>
+                          <option value="1">(2x+1)/(x-1)</option>
+                          <option value="2">(x-2)/(x+1)</option>
+                          <option value="3">(-x+1)/(2x-3)</option>
+                        </>
+                      )}
+                      {graphConfig.type === 'cubic' && (
+                        <>
+                          <option value="1">x³ - 3x + 1</option>
+                          <option value="2">x³ - 3x</option>
+                          <option value="3">-x³ + 3x² - 1</option>
+                          <option value="4">x³ - 3x² + 2</option>
+                        </>
+                      )}
+                      {graphConfig.type === 'quartic' && (
+                        <>
+                          <option value="1">x⁴ - 2x² - 1</option>
+                          <option value="2">x⁴ - 2x² - 3</option>
+                          <option value="3">-x⁴ + 4x² + 1</option>
+                          <option value="4">x⁴ + 2x²</option>
+                        </>
+                      )}
+                    </select>
                   </div>
 
                   {/* Ô nhập hệ số chi tiết */}
@@ -727,7 +813,7 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         step="any"
                         value={graphConfig.a}
                         onChange={e => setGraphConfig({ ...graphConfig, a: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
+                        className="w-full px-2 py-1.5 text-xs text-center border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 font-mono font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none"
                       />
                     </div>
                     <div>
@@ -737,7 +823,7 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         step="any"
                         value={graphConfig.b}
                         onChange={e => setGraphConfig({ ...graphConfig, b: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
+                        className="w-full px-2 py-1.5 text-xs text-center border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 font-mono font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none"
                       />
                     </div>
                     <div>
@@ -747,7 +833,7 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         step="any"
                         value={graphConfig.c}
                         onChange={e => setGraphConfig({ ...graphConfig, c: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
+                        className="w-full px-2 py-1.5 text-xs text-center border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 font-mono font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none"
                       />
                     </div>
                     <div>
@@ -757,7 +843,7 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         step="any"
                         value={graphConfig.d ?? 0}
                         onChange={e => setGraphConfig({ ...graphConfig, d: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1.5 text-xs text-center border-2 border-slate-700 dark:border-slate-500 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold"
+                        className="w-full px-2 py-1.5 text-xs text-center border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 font-mono font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none"
                       />
                     </div>
                     {graphConfig.type === 'rational_2_1' && (
@@ -768,7 +854,7 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                           step="any"
                           value={graphConfig.e ?? 0}
                           onChange={e => setGraphConfig({ ...graphConfig, e: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-2 py-1.5 text-xs text-center border-2 border-teal-600 rounded-xl bg-white dark:bg-slate-800 font-mono font-bold text-teal-700 dark:text-teal-300"
+                          className="w-full px-2 py-1.5 text-xs text-center border border-teal-500 rounded-lg bg-white dark:bg-slate-800 font-mono font-bold text-teal-700 dark:text-teal-300 focus:border-teal-600 focus:ring-1 focus:ring-teal-500/20 outline-none"
                         />
                       </div>
                     )}
@@ -793,29 +879,44 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                     />
                   </div>
 
-                  {/* Nút chọn nhanh biểu thức mẫu */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Gợi ý biểu thức mẫu:
+                  {/* Gợi ý biểu thức mẫu */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                      Gợi ý mẫu:
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[
-                        { label: 'Bậc 2/1: (x²-x+1)/(x-1)', val: '(x^2 - x + 1)/(x - 1)' },
-                        { label: 'Phân thức: (2x+1)/(x-1)', val: '(2x + 1)/(x - 1)' },
-                        { label: 'Bậc 3: x³ - 3x + 1', val: 'x^3 - 3*x + 1' },
-                        { label: 'Bậc 4: x⁴ - 2x² - 1', val: 'x^4 - 2*x^2 - 1' },
-                        { label: 'Bậc 2: x² - 4x + 3', val: 'x^2 - 4*x + 3' },
-                      ].map((preset, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleGraphFnInputChange(preset.val)}
-                          className="px-2 py-1 text-[11px] rounded-lg border font-semibold bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800 hover:bg-teal-50 transition"
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        handleGraphFnInputChange(val);
+                        if (val === '(x^2 + x + 4)/(x + 1)') {
+                          setGraphFont('latex');
+                          setGraphConfig(prev => ({
+                            ...prev,
+                            isBoldLabels: false,
+                            curveWidth: 2.0,
+                            axisWidth: 1.4,
+                            showExtremaDots: false,
+                            showIntersectionDots: false,
+                            xMin: -6.5,
+                            xMax: 6.5,
+                            yMin: -7.5,
+                            yMax: 7.5,
+                            originQuadrant: 'top-left'
+                          }));
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500 cursor-pointer"
+                    >
+                      <option value="">-- Chọn biểu thức mẫu SGK --</option>
+                      <option value="(x^2 + x + 4)/(x + 1)">⭐ (x²+x+4)/(x+1) [Hình mẫu LaTeX]</option>
+                      <option value="(x^2 - x + 1)/(x - 1)">Bậc 2/1: (x²-x+1)/(x-1)</option>
+                      <option value="(2*x + 1)/(x - 1)">Phân thức: (2x+1)/(x-1)</option>
+                      <option value="x^3 - 3*x + 1">Bậc 3: x³ - 3x + 1</option>
+                      <option value="x^4 - 2*x^2 - 1">Bậc 4: x⁴ - 2x² - 1</option>
+                      <option value="x^2 - 4*x + 3">Bậc 2: x² - 4x + 3</option>
+                    </select>
                   </div>
 
                   {/* Thông tin dạng hàm đã nhận diện */}
@@ -835,33 +936,81 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                 </div>
               )}
 
-              {/* KHẢO SÁT & VẼ ĐỒ THỊ TRÊN ĐOẠN [a; b] */}
+              {/* PHẠM VI & MIỀN VẼ (OXY) */}
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-teal-800 dark:text-teal-300">
-                    <input
-                      type="checkbox"
-                      checked={graphConfig.restrictInterval ?? false}
-                      onChange={e => setGraphConfig({
-                        ...graphConfig,
-                        restrictInterval: e.target.checked,
-                        intervalA: graphConfig.intervalA ?? 0,
-                        intervalB: graphConfig.intervalB ?? 2,
+                  <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers size={13} className="text-teal-600" />
+                    Phạm vi & Miền vẽ:
+                  </span>
+                  <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setGraphConfig(prev => ({
+                        ...prev,
+                        restrictInterval: false,
+                        integralArea: prev.integralArea ? { ...prev.integralArea, enabled: false } : undefined
+                      }))}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        !graphConfig.restrictInterval && !graphConfig.integralArea?.enabled
+                          ? 'bg-teal-600 text-white shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Toàn miền ℝ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGraphConfig(prev => ({
+                        ...prev,
+                        restrictInterval: true,
+                        intervalA: prev.intervalA ?? prev.integralArea?.a ?? 0,
+                        intervalB: prev.intervalB ?? prev.integralArea?.b ?? 2,
                         intervalMode: 'only',
-                        showIntervalEndpoints: graphConfig.showIntervalEndpoints ?? true
-                      })}
-                      className="rounded text-teal-600"
-                    />
-                    📐 Vẽ đồ thị trên đoạn [a; b]
-                  </label>
-                  {graphConfig.restrictInterval && (
-                    <span className="text-[10px] font-mono font-bold bg-teal-100 dark:bg-teal-900/80 text-teal-800 dark:text-teal-200 px-2 py-0.5 rounded">
-                      [{graphConfig.intervalA ?? 0}; {graphConfig.intervalB ?? 2}]
-                    </span>
-                  )}
+                        showIntervalEndpoints: prev.showIntervalEndpoints ?? true,
+                        integralArea: prev.integralArea ? { ...prev.integralArea, enabled: false } : undefined
+                      }))}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        graphConfig.restrictInterval && !graphConfig.integralArea?.enabled
+                          ? 'bg-teal-600 text-white shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Đoạn [a; b]
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGraphConfig(prev => ({
+                        ...prev,
+                        restrictInterval: false,
+                        integralArea: {
+                          enabled: true,
+                          a: prev.integralArea?.a ?? prev.intervalA ?? -1,
+                          b: prev.integralArea?.b ?? prev.intervalB ?? 2,
+                          gType: prev.integralArea?.gType ?? 'zero',
+                          gLineM: prev.integralArea?.gLineM ?? 1,
+                          gLineN: prev.integralArea?.gLineN ?? 0,
+                          style: prev.integralArea?.style ?? 'hatch',
+                          hatchAngle: prev.integralArea?.hatchAngle ?? 45,
+                          hatchSpacing: prev.integralArea?.hatchSpacing ?? 8,
+                          showBoundLines: prev.integralArea?.showBoundLines ?? true,
+                          showAreaLabel: prev.integralArea?.showAreaLabel ?? true,
+                          areaLabelText: prev.integralArea?.areaLabelText ?? 'S'
+                        }
+                      }))}
+                      className={`px-2.5 py-1 rounded-md transition cursor-pointer ${
+                        graphConfig.integralArea?.enabled
+                          ? 'bg-teal-600 text-white shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Tô tích phân (S)
+                    </button>
+                  </div>
                 </div>
 
-                {graphConfig.restrictInterval && (
+                {/* NỘI DUNG CHẾ ĐỘ ĐOẠN [a; b] */}
+                {graphConfig.restrictInterval && !graphConfig.integralArea?.enabled && (
                   <div className="p-3 bg-teal-50/70 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800/60 space-y-2.5 animate-fade-in text-xs">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -892,7 +1041,6 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                       </div>
                     </div>
 
-                    {/* Tùy chọn gióng 2 đầu mút */}
                     <div className="flex items-center justify-between pt-0.5">
                       <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold text-[11px]">
                         <input
@@ -908,16 +1056,13 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                       </label>
                     </div>
 
-                    {/* Presets đoạn thường gặp */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       <span className="text-[10px] font-bold text-slate-400">Chọn nhanh:</span>
                       {[
                         { a: 0, b: 2 },
                         { a: -1, b: 2 },
                         { a: -2, b: 2 },
-                        { a: 0, b: 3 },
                         { a: 1, b: 3 },
-                        { a: -3, b: 0 }
                       ].map((p, idx) => (
                         <button
                           key={idx}
@@ -937,7 +1082,6 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         </button>
                       ))}
 
-                      {/* Nút tự động căn chỉnh Oxy theo đoạn */}
                       <button
                         type="button"
                         onClick={() => {
@@ -959,7 +1103,6 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                       </button>
                     </div>
 
-                    {/* Thông tin GTLN/GTNN trên đoạn của đồ thị */}
                     {(() => {
                       const mm = getIntervalMinMax(graphConfig);
                       if (mm.hasAsymptote) {
@@ -991,20 +1134,285 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                     })()}
                   </div>
                 )}
+
+                {/* NỘI DUNG CHẾ ĐỘ TÔ MIỀN DIỆN TÍCH TÍCH PHÂN */}
+                {graphConfig.integralArea?.enabled && (
+                  <div className="p-3 bg-teal-50/70 dark:bg-teal-950/30 rounded-xl border border-teal-200 dark:border-teal-800/60 space-y-2.5 text-xs animate-fade-in">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block">Cận dưới (a):</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={graphConfig.integralArea?.a ?? -1}
+                          onChange={e => setGraphConfig({
+                            ...graphConfig,
+                            integralArea: { ...graphConfig.integralArea!, a: parseFloat(e.target.value) || 0 }
+                          })}
+                          className="w-full mt-1 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 block">Cận trên (b):</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={graphConfig.integralArea?.b ?? 2}
+                          onChange={e => setGraphConfig({
+                            ...graphConfig,
+                            integralArea: { ...graphConfig.integralArea!, b: parseFloat(e.target.value) || 0 }
+                          })}
+                          className="w-full mt-1 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block mb-1">Đường biên dưới g(x):</span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setGraphConfig({
+                            ...graphConfig,
+                            integralArea: { ...graphConfig.integralArea!, gType: 'zero' }
+                          })}
+                          className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                            (graphConfig.integralArea?.gType ?? 'zero') === 'zero'
+                              ? 'bg-teal-600 text-white shadow-2xs'
+                              : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          Trục hoành Ox (y = 0)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGraphConfig({
+                            ...graphConfig,
+                            integralArea: { ...graphConfig.integralArea!, gType: 'linear' }
+                          })}
+                          className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
+                            graphConfig.integralArea?.gType === 'linear'
+                              ? 'bg-teal-600 text-white shadow-2xs'
+                              : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          Đường thẳng y = mx + n
+                        </button>
+                      </div>
+                      {graphConfig.integralArea?.gType === 'linear' && (
+                        <div className="grid grid-cols-2 gap-2 mt-2 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <div>
+                            <span className="text-[10px] text-slate-400">Hệ số góc m:</span>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={graphConfig.integralArea?.gLineM ?? 1}
+                              onChange={e => setGraphConfig({
+                                ...graphConfig,
+                                integralArea: { ...graphConfig.integralArea!, gLineM: parseFloat(e.target.value) || 0 }
+                              })}
+                              className="w-full mt-0.5 p-1 text-xs border rounded font-semibold"
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400">Tung độ gốc n:</span>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={graphConfig.integralArea?.gLineN ?? 0}
+                              onChange={e => setGraphConfig({
+                                ...graphConfig,
+                                integralArea: { ...graphConfig.integralArea!, gLineN: parseFloat(e.target.value) || 0 }
+                              })}
+                              className="w-full mt-0.5 p-1 text-xs border rounded font-semibold"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        { id: 'hatch', label: 'Gạch sọc xiên' },
+                        { id: 'fill', label: 'Màu mờ' },
+                        { id: 'both', label: 'Gạch + Màu' }
+                      ].map(st => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setGraphConfig({
+                            ...graphConfig,
+                            integralArea: { ...graphConfig.integralArea!, style: st.id as any }
+                          })}
+                          className={`py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                            (graphConfig.integralArea?.style ?? 'hatch') === st.id
+                              ? 'bg-teal-600 text-white'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-500">Mật độ:</span>
+                      {[
+                        { label: 'Thưa', sp: 11 },
+                        { label: 'Vừa', sp: 8 },
+                        { label: 'Dày', sp: 5 }
+                      ].map(d => (
+                        <button
+                          key={d.label}
+                          type="button"
+                          onClick={() => setGraphConfig({
+                            ...graphConfig,
+                            integralArea: { ...graphConfig.integralArea!, hatchSpacing: d.sp }
+                          })}
+                          className={`flex-1 py-0.5 text-[10px] font-semibold rounded ${
+                            (graphConfig.integralArea?.hatchSpacing ?? 8) === d.sp
+                              ? 'bg-teal-200 dark:bg-teal-800 text-teal-900 dark:text-teal-100 font-bold'
+                              : 'bg-white dark:bg-slate-800 border'
+                          }`}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setGraphConfig({
+                          ...graphConfig,
+                          integralArea: {
+                            ...graphConfig.integralArea!,
+                            hatchAngle: (graphConfig.integralArea?.hatchAngle ?? 45) === 45 ? -45 : 45
+                          }
+                        })}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-white dark:bg-slate-800 border rounded hover:bg-slate-100 cursor-pointer"
+                        title="Đổi hướng nghiêng gạch sọc (45° hoặc -45°)"
+                      >
+                        Góc: {(graphConfig.integralArea?.hatchAngle ?? 45)}°
+                      </button>
+                    </div>
+
+                    {/* Mẫu nhanh tích phân chuẩn SGK */}
+                    <div className="pt-1.5 border-t border-teal-200/60 dark:border-teal-800/60">
+                      <span className="text-[10px] font-bold text-teal-800 dark:text-teal-300 block mb-1">
+                        Mẫu nhanh đề thi THPT:
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          {
+                            label: 'Parabol y = 4 - x² trên [-2; 2]',
+                            apply: () => {
+                              setGraphConfig(prev => ({
+                                ...prev,
+                                type: 'quadratic',
+                                a: -1, b: 0, c: 4,
+                                xMin: -3.5, xMax: 3.5, yMin: -2, yMax: 5.5,
+                                integralArea: {
+                                  enabled: true, a: -2, b: 2, gType: 'zero', style: 'hatch',
+                                  hatchAngle: 45, hatchSpacing: 8, showBoundLines: true, showAreaLabel: true, areaLabelText: 'S'
+                                }
+                              }));
+                            }
+                          },
+                          {
+                            label: 'Parabol & Đường thẳng y = x + 2',
+                            apply: () => {
+                              setGraphConfig(prev => ({
+                                ...prev,
+                                type: 'quadratic',
+                                a: 1, b: 0, c: 0,
+                                xMin: -2.5, xMax: 3.5, yMin: -1.5, yMax: 5.5,
+                                integralArea: {
+                                  enabled: true, a: -1, b: 2, gType: 'linear', gLineM: 1, gLineN: 2, style: 'hatch',
+                                  hatchAngle: 45, hatchSpacing: 8, showBoundLines: true, showAreaLabel: true, areaLabelText: 'S'
+                                }
+                              }));
+                            }
+                          },
+                          {
+                            label: 'Hàm bậc 3 y = x³ - 3x trên [0; √3]',
+                            apply: () => {
+                              setGraphConfig(prev => ({
+                                ...prev,
+                                type: 'cubic',
+                                a: 1, b: 0, c: -3, d: 0,
+                                xMin: -2.5, xMax: 2.5, yMin: -3, yMax: 3,
+                                integralArea: {
+                                  enabled: true, a: 0, b: 1.73, gType: 'zero', style: 'hatch',
+                                  hatchAngle: -45, hatchSpacing: 7, showBoundLines: true, showAreaLabel: true, areaLabelText: 'S'
+                                }
+                              }));
+                            }
+                          }
+                        ].map((m, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={m.apply}
+                            className="px-2 py-0.5 text-[10px] font-semibold bg-white dark:bg-slate-800 hover:bg-teal-100 rounded border border-teal-200 dark:border-teal-800 cursor-pointer text-teal-800 dark:text-teal-200 transition"
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Hiển thị giá trị tích phân tính được */}
+                    {(() => {
+                      const f = (x: number) => evalGraphFunction(graphConfig, x);
+                      const g = (x: number) => graphConfig.integralArea?.gType === 'linear'
+                        ? ((graphConfig.integralArea?.gLineM ?? 1) * x + (graphConfig.integralArea?.gLineN ?? 0))
+                        : 0;
+                      const a = graphConfig.integralArea?.a ?? -1;
+                      const b = graphConfig.integralArea?.b ?? 2;
+                      const areaVal = calcDefiniteIntegral(f, g, a, b);
+                      return (
+                        <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-teal-300 dark:border-teal-700 flex items-center justify-between text-teal-900 dark:text-teal-200 font-bold text-[11px]">
+                          <span>Diện tích S = ∫ₐᵇ |f(x) - g(x)| dx:</span>
+                          <span className="text-sm text-teal-600 dark:text-teal-400">≈ {formatNumDisplay(areaVal)}</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
-              {/* Checkbox bật/tắt hiển thị */}
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                <label className="flex items-center gap-1.5 cursor-pointer text-teal-800 dark:text-teal-300">
+              {/* Checkbox bật/tắt hiển thị gọn gàng */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2 text-xs font-medium text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer hover:text-teal-700 dark:hover:text-teal-300 transition">
                   <input
                     type="checkbox"
                     checked={graphConfig.showExtrema ?? true}
-                    onChange={e => setGraphConfig({ ...graphConfig, showExtrema: e.target.checked })}
-                    className="rounded text-teal-600"
+                    onChange={e => setGraphConfig({
+                      ...graphConfig,
+                      showExtrema: e.target.checked,
+                      showExtremaDots: e.target.checked
+                    })}
+                    className="rounded text-teal-600 focus:ring-teal-500/20"
                   />
-                  🎯 Tọa độ cực trị & gióng
+                  <span>Tọa độ & điểm cực trị</span>
                 </label>
-                <label className="flex items-center gap-1.5 cursor-pointer text-teal-800 dark:text-teal-300">
+                <label className="flex items-center gap-2 cursor-pointer hover:text-teal-700 dark:hover:text-teal-300 transition">
+                  <input
+                    type="checkbox"
+                    checked={graphConfig.showIntersections ?? true}
+                    onChange={e => setGraphConfig({ ...graphConfig, showIntersections: e.target.checked })}
+                    className="rounded text-teal-600 focus:ring-teal-500/20"
+                  />
+                  <span>Giao điểm trục Ox, Oy</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-teal-700 dark:hover:text-teal-300 transition">
+                  <input
+                    type="checkbox"
+                    checked={graphConfig.showAsymptotes ?? true}
+                    onChange={e => setGraphConfig({ ...graphConfig, showAsymptotes: e.target.checked })}
+                    className="rounded text-teal-600 focus:ring-teal-500/20"
+                  />
+                  <span>Đường tiệm cận</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer hover:text-teal-700 dark:hover:text-teal-300 transition">
                   <input
                     type="checkbox"
                     checked={graphConfig.showCustomPoint ?? false}
@@ -1016,27 +1424,9 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         customPoint: graphConfig.customPoint ?? { x: 2, label: 'M' }
                       });
                     }}
-                    className="rounded text-teal-600"
+                    className="rounded text-teal-600 focus:ring-teal-500/20"
                   />
-                  🎯 Điểm thuộc đồ thị & gióng
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer text-blue-800 dark:text-blue-300">
-                  <input
-                    type="checkbox"
-                    checked={graphConfig.showIntersections ?? true}
-                    onChange={e => setGraphConfig({ ...graphConfig, showIntersections: e.target.checked })}
-                    className="rounded text-blue-600"
-                  />
-                  📍 Giao điểm Ox, Oy
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={graphConfig.showAsymptotes ?? true}
-                    onChange={e => setGraphConfig({ ...graphConfig, showAsymptotes: e.target.checked })}
-                    className="rounded"
-                  />
-                  📐 Đường tiệm cận
+                  <span>Thêm điểm M trên đồ thị</span>
                 </label>
               </div>
 
@@ -1182,19 +1572,288 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                   </div>
                 );
               })()}
-            </div>
-          )}
 
-          {/* HÀNG NÚT TÁC VỤ SAO CHÉP & TẢI ẢNH */}
+              {/* KHU VỰC CẤU HÌNH ĐỘ ĐẬM NHẠT NÉT VẼ ĐỒ THỊ & CHỮ SỐ */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5 text-xs animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Sliders size={14} className="text-teal-600" />
+                    Độ đậm nhạt nét vẽ & chữ số:
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md font-mono font-bold text-[11px] bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-300 border border-slate-200 dark:border-slate-700">
+                    Nét: {graphConfig.curveWidth ?? 2.4}px · {graphConfig.isBoldLabels !== false ? 'Chữ Đậm' : 'Chữ Thường'}
+                  </span>
+                </div>
+
+                {/* 1. Độ dày nét vẽ đồ thị */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-600 dark:text-slate-400">Độ dày nét cong đồ thị:</span>
+                    <span className="font-mono font-bold text-teal-700 dark:text-teal-300">{graphConfig.curveWidth ?? 2.4}px</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min="1.2"
+                      max="4.5"
+                      step="0.2"
+                      value={graphConfig.curveWidth ?? 2.4}
+                      onChange={e => setGraphConfig({ ...graphConfig, curveWidth: parseFloat(e.target.value) })}
+                      className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-600"
+                      title="Kéo chỉnh độ dày nét vẽ đồ thị"
+                    />
+                    <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                      {[
+                        { width: 1.6, label: 'Mảnh' },
+                        { width: 2.2, label: 'Vừa' },
+                        { width: 2.8, label: 'Chuẩn SGK' },
+                        { width: 3.6, label: 'Đậm' },
+                      ].map(item => (
+                        <button
+                          key={item.width}
+                          type="button"
+                          onClick={() => setGraphConfig({ ...graphConfig, curveWidth: item.width })}
+                          className={`px-1.5 py-0.5 rounded transition ${
+                            Math.abs((graphConfig.curveWidth ?? 2.4) - item.width) < 0.15
+                              ? 'bg-teal-600 text-white shadow-2xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Màu sắc nét vẽ đồ thị & Độ đậm chữ số */}
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                  {/* Màu nét vẽ */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                      Màu nét vẽ đồ thị:
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      {[
+                        { color: '#000000', title: 'Đen (Chuẩn SGK & Thi)' },
+                        { color: '#2563eb', title: 'Xanh dương' },
+                        { color: '#dc2626', title: 'Đỏ' },
+                        { color: '#0d9488', title: 'Xanh ngọc' },
+                        { color: '#7c3aed', title: 'Tím' },
+                      ].map(c => (
+                        <button
+                          key={c.color}
+                          type="button"
+                          onClick={() => setGraphConfig({ ...graphConfig, curveColor: c.color })}
+                          title={c.title}
+                          className={`w-5 h-5 rounded-full border-2 transition ${
+                            (graphConfig.curveColor ?? '#000000') === c.color
+                              ? 'border-teal-500 scale-110 shadow-xs'
+                              : 'border-transparent opacity-80 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: c.color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Độ đậm chữ số */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+                      Chữ số & nhãn Oxy:
+                    </label>
+                    <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setGraphConfig({ ...graphConfig, isBoldLabels: true })}
+                        className={`flex-1 py-1 rounded text-center transition ${
+                          graphConfig.isBoldLabels !== false
+                            ? 'bg-teal-600 text-white shadow-2xs font-extrabold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                        title="Chữ và số in đậm chuẩn in ấn SGK, rõ nét khi chèn Word"
+                      >
+                        In đậm (Bold)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGraphConfig({ ...graphConfig, isBoldLabels: false })}
+                        className={`flex-1 py-1 rounded text-center transition ${
+                          graphConfig.isBoldLabels === false
+                            ? 'bg-teal-600 text-white shadow-2xs font-semibold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                        title="Chữ và số nét thường thanh mảnh"
+                      >
+                        Nét thường
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Kích thước chấm tròn cực trị & giao điểm */}
+                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between">
+                  <span className="font-semibold text-slate-600 dark:text-slate-400 text-[11px]">
+                    Chấm tròn cực trị & giao điểm:
+                  </span>
+                  <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                    {[
+                      { r: 1.8, label: 'Nhỏ (1.8px)' },
+                      { r: 2.4, label: 'Chuẩn SGK (2.4px)' },
+                      { r: 3.2, label: 'Vừa (3.2px)' }
+                    ].map(item => (
+                      <button
+                        key={item.r}
+                        type="button"
+                        onClick={() => setGraphConfig({ ...graphConfig, dotRadius: item.r })}
+                        className={`px-2 py-0.5 rounded transition cursor-pointer ${
+                          Math.abs((graphConfig.dotRadius ?? 2.4) - item.r) < 0.2
+                            ? 'bg-teal-600 text-white shadow-2xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* KHU VỰC THÊM TEXT / KÝ HIỆU VÀO ĐỒ THỊ (CUSTOM TEXT ANNOTATIONS) */}
+              <div className="p-3 bg-teal-50/70 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800/70 space-y-2.5 text-xs animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-teal-900 dark:text-teal-200 flex items-center gap-1.5">
+                    <Type size={14} className="text-teal-600" />
+                    Thêm Text / Ký hiệu vào đồ thị:
+                  </span>
+                  <span className="text-[10px] text-teal-700 dark:text-teal-300 font-bold">
+                    {(graphConfig.customTexts?.length ?? 0)} nhãn trên hình
+                  </span>
+                </div>
+
+                {/* Input text + Nút thêm */}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={newTextContent}
+                      onChange={e => setNewTextContent(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          handleAddCustomText();
+                        }
+                      }}
+                      placeholder="Nhập: (C), y = f(x), d, A(-1;3)..."
+                      className="w-full px-2.5 py-1.5 text-xs font-bold rounded-lg border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-800 text-teal-950 dark:text-teal-100 placeholder:text-slate-400"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAddCustomText()}
+                    className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-xs transition shrink-0"
+                    title="Thêm text vào đồ thị (sau đó có thể kéo rê chuột trực tiếp)"
+                  >
+                    <Plus size={13} />
+                    Thêm Text
+                  </button>
+                </div>
+
+                {/* Nút bấm mẫu nhanh các ký hiệu đề thi chuẩn */}
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[10px] font-bold text-slate-400 mr-0.5">Mẫu nhanh:</span>
+                  {[
+                    '(C)',
+                    'y = f(x)',
+                    '(C\')',
+                    '(d)',
+                    '(P)',
+                    'A',
+                    'B',
+                    'I',
+                    'M',
+                    'Δ',
+                  ].map(sample => (
+                    <button
+                      key={sample}
+                      type="button"
+                      onClick={() => {
+                        setNewTextContent(sample);
+                        handleAddCustomText(sample);
+                      }}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-200 border border-teal-200 dark:border-teal-700 hover:bg-teal-100 transition"
+                      title={`Bấm để thêm ngay ${sample} vào đồ thị`}
+                    >
+                      +{sample}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Danh sách các Text đã thêm */}
+                {graphConfig.customTexts && graphConfig.customTexts.length > 0 && (
+                  <div className="pt-2 border-t border-teal-200/60 dark:border-teal-800 space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                    {graphConfig.customTexts.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between px-2 py-1 bg-white dark:bg-slate-800 rounded-lg border border-teal-200/80 dark:border-teal-800 text-[11px]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-teal-900 dark:text-teal-200 font-mono">
+                            {item.text}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                            ({item.x}; {item.y})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCustomText(item.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
+                            title="Xóa text này khỏi đồ thị"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="text-[10px] text-teal-800/80 dark:text-teal-300/80 leading-relaxed bg-white/70 dark:bg-slate-800/70 p-2 rounded-lg border border-teal-200/50 dark:border-teal-800/50 space-y-1">
+                  <div>💡 <strong>Di chuyển:</strong> Bấm trực tiếp vào chữ trên đồ thị để kéo rê đến vị trí mong muốn.</div>
+                  <div>🗑️ <strong>Xóa nhanh:</strong> Click vào chữ để hiện nút <strong>[Xóa]</strong>, hoặc nhấn phím <strong>Delete / Backspace</strong>, hoặc <strong>nhấp chuột phải</strong> vào chữ trên đồ thị.</div>
+                </div>
+              </div>
+            </div>
+
+            {/* HÀNG NÚT TÁC VỤ SAO CHÉP & TẢI ẢNH */}
           <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+            {onInsertImage && (
+              <button
+                onClick={() => {
+                  if (graphCanvasRef.current) {
+                    const cropped = cropCanvasToContent(graphCanvasRef.current, 6);
+                    onInsertImage(cropped.toDataURL('image/png'));
+                  } else if (graphDataUrl) {
+                    onInsertImage(graphDataUrl);
+                  }
+                }}
+                className="px-4 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
+                title="Chèn ảnh đồ thị 300 DPI vào đề thi"
+              >
+                <CheckCircle2 size={16} />
+                <span>Chèn vào đề thi</span>
+              </button>
+            )}
+
             <button
               onClick={() => {
-                const currentUrl = activeSubTab === 'bbt' ? bbtDataUrl : graphDataUrl;
-                const label = activeSubTab === 'bbt' ? 'Bảng biến thiên' : 'Đồ thị Oxy';
+                const currentUrl = graphDataUrl;
+                const label = 'Đồ thị Oxy';
                 handleCopyImage(currentUrl, label);
               }}
-              className="flex-1 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition"
-              title="Sao chép ảnh vào Clipboard (PNG) để dán trực tiếp Ctrl+V vào Word"
+              className="flex-1 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+              title="Sao chép toàn bộ ảnh vào Clipboard (PNG) để dán trực tiếp Ctrl+V vào Word"
             >
               <Copy size={15} />
               Copy ảnh (Ctrl+V vào Word)
@@ -1202,11 +1861,11 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
 
             <button
               onClick={() => {
-                const currentUrl = activeSubTab === 'bbt' ? bbtDataUrl : graphDataUrl;
-                const fname = activeSubTab === 'bbt' ? 'Bang_bien_thien_300dpi.png' : 'Do_thi_Oxy_300dpi.png';
+                const currentUrl = graphDataUrl;
+                const fname = 'Do_thi_Oxy_300dpi.png';
                 handleDownloadImage(currentUrl, fname);
               }}
-              className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition"
+              className="px-3.5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
               title="Tải ảnh PNG độ phân giải 300 DPI"
             >
               <Download size={15} />
@@ -1219,105 +1878,80 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
         {/* CỘT PHẢI: KHUNG VẼ CANVAS TRỰC TIẾP (7 CỘT) */}
         {/* ========================================================= */}
         <div className="lg:col-span-7 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-teal-100 dark:border-slate-800 shadow-xs flex flex-col items-center justify-center min-h-[460px]">
-          <div className="w-full flex flex-col gap-2.5 pb-3 mb-2 border-b border-slate-100 dark:border-slate-800">
-            {/* Dòng 1: Tiêu đề và Thanh trượt Cỡ chữ */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Eye size={15} className="text-teal-600" />
-                Xem trước hình vẽ (Tối ưu chèn Word):
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Bộ chọn Phông chữ chuẩn đề thi */}
-                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                  <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                    <Type size={13} className="text-teal-600" />
-                    Phông:
+          <div className="w-full flex flex-col gap-2 pb-3 mb-2 border-b border-slate-100 dark:border-slate-800">
+            {/* Cụm Phông chữ, Nét vẽ, Độ đậm chữ & Cỡ chữ (Layout 2 dòng chuẩn mẫu) */}
+            <MathFontSelector
+              font={graphFont}
+              onFontChange={val => {
+                setGraphFont(val);
+                if (val === 'latex') {
+                  setGraphConfig(prev => ({
+                    ...prev,
+                    isBoldLabels: false,
+                    showExtremaDots: false,
+                    curveWidth: 2.0,
+                    axisWidth: 1.4
+                  }));
+                } else {
+                  setGraphConfig(prev => ({
+                    ...prev,
+                    isBoldLabels: true,
+                    curveWidth: 2.6,
+                    axisWidth: 1.8
+                  }));
+                }
+              }}
+              stroke={(graphConfig.curveWidth ?? 2.4) <= 1.8 ? 'thin' : (graphConfig.curveWidth ?? 2.4) >= 3.2 ? 'bold' : 'standard'}
+              onStrokeChange={s => {
+                const w = s === 'thin' ? 1.6 : s === 'bold' ? 3.6 : 2.4;
+                setGraphConfig(prev => ({ ...prev, curveWidth: w }));
+              }}
+              isBold={graphConfig.isBoldLabels !== false}
+              onBoldChange={b => setGraphConfig(prev => ({ ...prev, isBoldLabels: b }))}
+              size="sm"
+              extraRow1Right={
+                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/60 px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <span className="text-[11px] font-bold text-slate-500">
+                    Cỡ: <span className="font-mono text-teal-700 dark:text-teal-300 font-bold">{Math.round(fontScale * 100)}%</span>
                   </span>
-                  <select
-                    value={graphFont}
-                    onChange={e => setGraphFont(e.target.value)}
-                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-[11px] rounded px-1.5 py-0.5 font-bold focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-                    title="Lựa chọn phông chữ hiển thị trên đồ thị và bảng biến thiên"
-                  >
-                    <option value="times">🏛️ Times New Roman (Chuẩn SGK & Đề thi - Đẹp nhất)</option>
-                    <option value="cambria">📐 Cambria Math (Toán học Office)</option>
-                    <option value="latex">🖋️ LaTeX / TikZ (Computer Modern)</option>
-                    <option value="sans">✨ Be Vietnam Pro (Hiện đại)</option>
-                  </select>
-                </div>
-
-                <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                  Cỡ: <span className="font-mono text-teal-700 dark:text-teal-300 font-extrabold">{Math.round(fontScale * 100)}%</span>
-                </span>
-
-                {/* Slider kéo cỡ chữ */}
-                <input
-                  type="range"
-                  min="0.75"
-                  max="1.6"
-                  step="0.05"
-                  value={fontScale}
-                  onChange={e => setFontScale(parseFloat(e.target.value))}
-                  className="w-20 sm:w-28 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-600"
-                  title={`Kéo để chỉnh cỡ chữ (${Math.round(fontScale * 100)}%)`}
-                />
-
-                {/* Nút A- và A+ */}
-                <div className="flex items-center gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setFontScale(prev => Math.max(0.75, Math.round((prev - 0.1) * 10) / 10))}
-                    className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-teal-50"
-                    title="Giảm cỡ chữ (A-)"
-                  >
-                    A-
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFontScale(prev => Math.min(1.6, Math.round((prev + 0.1) * 10) / 10))}
-                    className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-teal-50"
-                    title="Tăng cỡ chữ (A+)"
-                  >
-                    A+
-                  </button>
-                </div>
-
-                {/* Các mức chọn nhanh */}
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-[10px] font-bold">
-                  {[
-                    { scale: 0.85, label: 'Nhỏ' },
-                    { scale: 1.0, label: 'Chuẩn' },
-                    { scale: 1.2, label: 'Lớn' },
-                    { scale: 1.4, label: 'Rất lớn' },
-                  ].map(item => (
+                  <input
+                    type="range"
+                    min="0.75"
+                    max="1.6"
+                    step="0.05"
+                    value={fontScale}
+                    onChange={e => setFontScale(parseFloat(e.target.value))}
+                    className="w-16 sm:w-20 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-600"
+                  />
+                  <div className="flex items-center gap-0.5">
                     <button
-                      key={item.scale}
                       type="button"
-                      onClick={() => setFontScale(item.scale)}
-                      className={`px-2 py-0.5 rounded-md transition ${
-                        Math.abs(fontScale - item.scale) < 0.04
-                          ? 'bg-teal-600 text-white shadow-2xs'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                      }`}
+                      onClick={() => setFontScale(prev => Math.max(0.75, Math.round((prev - 0.1) * 10) / 10))}
+                      className="px-1 py-0.2 text-[10px] font-bold rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-teal-100 cursor-pointer"
                     >
-                      {item.label}
+                      -
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setFontScale(prev => Math.min(1.6, Math.round((prev + 0.1) * 10) / 10))}
+                      className="px-1 py-0.2 text-[10px] font-bold rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-teal-100 cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </div>
+              }
+            />
 
-            {/* Dòng 2 (Chỉ có ở Đồ thị Oxy): THANH TRƯỢT HỆ TRỤC OXY & CHIA ĐƠN VỊ */}
+            {/* Dòng 2 (Chỉ có ở Đồ thị Oxy): Thu phóng Oxy & Lưới tọa độ */}
             {activeSubTab === 'graph' && (
-              <div className="p-2 bg-teal-50/70 dark:bg-teal-950/40 rounded-xl border border-teal-200 dark:border-teal-800/70 flex flex-wrap items-center justify-between gap-3 text-xs animate-fade-in">
-                {/* 1. Thanh trượt Thu phóng / Tỷ lệ đơn vị trục Oxy */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-extrabold text-teal-900 dark:text-teal-200 flex items-center gap-1">
-                    <Ruler size={14} className="text-teal-600" />
-                    Thu phóng Oxy: <span className="font-mono text-teal-700 dark:text-teal-300 font-extrabold">±{Math.abs(graphConfig.xMax ?? 5.5)}</span>
+              <div className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                {/* Thu phóng phạm vi Oxy */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                    <Ruler size={13} className="text-teal-600" />
+                    Thu phóng: <span className="font-mono font-bold text-teal-700 dark:text-teal-300">±{Math.abs(graphConfig.xMax ?? 5.5)}</span>
                   </span>
-
-                  {/* Thanh trượt slider Oxy */}
                   <input
                     type="range"
                     min="3"
@@ -1334,11 +1968,8 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         yMax: val
                       });
                     }}
-                    className="w-24 sm:w-36 h-1.5 bg-teal-200 dark:bg-teal-800 rounded-lg appearance-none cursor-pointer accent-teal-600"
-                    title={`Kéo để thu phóng tỷ lệ trục Oxy (±${Math.abs(graphConfig.xMax ?? 5.5)})`}
+                    className="w-20 sm:w-28 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-teal-600"
                   />
-
-                  {/* Nút - và + */}
                   <div className="flex items-center gap-0.5">
                     <button
                       type="button"
@@ -1347,8 +1978,8 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         const next = Math.min(10, Math.round((current + 0.5) * 10) / 10);
                         setGraphConfig({ ...graphConfig, xMin: -next, xMax: next, yMin: -next, yMax: next });
                       }}
-                      className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-200 border border-teal-200 dark:border-teal-700 hover:bg-teal-100"
-                      title="Thu nhỏ đồ thị (Mở rộng phạm vi trục Oxy)"
+                      className="px-1.5 py-0.2 text-[10px] font-bold rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
+                      title="Mở rộng trục Oxy (-)"
                     >
                       -
                     </button>
@@ -1359,51 +1990,19 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         const next = Math.max(3, Math.round((current - 0.5) * 10) / 10);
                         setGraphConfig({ ...graphConfig, xMin: -next, xMax: next, yMin: -next, yMax: next });
                       }}
-                      className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-200 border border-teal-200 dark:border-teal-700 hover:bg-teal-100"
-                      title="Phóng to đồ thị (Thu hẹp phạm vi trục Oxy)"
+                      className="px-1.5 py-0.2 text-[10px] font-bold rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 cursor-pointer"
+                      title="Thu hẹp trục Oxy (+)"
                     >
                       +
                     </button>
                   </div>
-
-                  {/* Nút chọn nhanh */}
-                  <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-teal-200 dark:border-teal-700 text-[10px] font-bold">
-                    {[
-                      { range: 4, label: '±4 (To)' },
-                      { range: 5.5, label: '±5.5 (SGK)' },
-                      { range: 7, label: '±7 (Bao quát)' },
-                    ].map(item => (
-                      <button
-                        key={item.range}
-                        type="button"
-                        onClick={() => setGraphConfig({
-                          ...graphConfig,
-                          xMin: -item.range,
-                          xMax: item.range,
-                          yMin: -item.range,
-                          yMax: item.range
-                        })}
-                        className={`px-2 py-0.5 rounded-md transition ${
-                          Math.abs((graphConfig.xMax ?? 5.5) - item.range) < 0.1
-                            ? 'bg-teal-600 text-white shadow-2xs'
-                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
-                {/* 2. Thanh điều khiển Bước chia & Ô lưới tọa độ (ĐỒNG BỘ 100%, KHÔNG CÒN TÁCH RỜI) */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                      <Hash size={13} className="text-teal-600" />
-                      Bước chia & Ô lưới:
-                    </span>
-                    {/* Nút chọn nhanh 1 (chuẩn), 0.5, 2 */}
-                    <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-teal-200 dark:border-teal-700 text-[10px] font-bold">
+                {/* Bước chia & Lưới */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-slate-500">Bước:</span>
+                    <div className="flex bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
                       {[
                         { step: 1, label: '1 (chuẩn)' },
                         { step: 0.5, label: '0.5' },
@@ -1419,7 +2018,7 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                             tickStepY: item.step,
                             gridStep: item.step
                           })}
-                          className={`px-1.5 py-0.5 rounded transition ${
+                          className={`px-1.5 py-0.5 rounded transition cursor-pointer ${
                             (graphConfig.tickStep ?? 1) === item.step
                               ? 'bg-teal-600 text-white shadow-2xs'
                               : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
@@ -1429,39 +2028,19 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                         </button>
                       ))}
                     </div>
-                    {/* Slider kéo bước chia */}
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="2.5"
-                      step="0.5"
-                      value={graphConfig.tickStep ?? 1}
-                      onChange={e => {
-                        const step = parseFloat(e.target.value);
-                        setGraphConfig({
-                          ...graphConfig,
-                          tickStep: step,
-                          tickStepX: step,
-                          tickStepY: step,
-                          gridStep: step
-                        });
-                      }}
-                      className="w-14 sm:w-16 h-1.5 bg-teal-200 dark:bg-teal-800 rounded-lg appearance-none cursor-pointer accent-teal-600"
-                      title={`Kéo chỉnh bước chia đơn vị và ô lưới (${graphConfig.tickStep ?? 1})`}
-                    />
                   </div>
 
-                  <label className="flex items-center gap-1 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="flex items-center gap-1 cursor-pointer text-[11px] text-slate-600 dark:text-slate-300">
                     <input
                       type="checkbox"
                       checked={graphConfig.showTicks ?? false}
                       onChange={e => setGraphConfig({ ...graphConfig, showTicks: e.target.checked })}
                       className="rounded text-teal-600"
                     />
-                    Vạch chia
+                    <span>Vạch chia</span>
                   </label>
 
-                  <label className="flex items-center gap-1 cursor-pointer text-[11px] font-bold text-teal-800 dark:text-teal-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-teal-200 dark:border-teal-700">
+                  <label className="flex items-center gap-1 cursor-pointer text-[11px] text-slate-600 dark:text-slate-300">
                     <input
                       type="checkbox"
                       checked={graphConfig.showTickLabels ?? false}
@@ -1472,17 +2051,17 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
                       })}
                       className="rounded text-teal-600"
                     />
-                    🔢 Đánh số (1, 2, 3...)
+                    <span>Đánh số</span>
                   </label>
 
-                  <label className="flex items-center gap-1 cursor-pointer text-[11px] font-bold text-teal-800 dark:text-teal-300 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-teal-200 dark:border-teal-700">
+                  <label className="flex items-center gap-1 cursor-pointer text-[11px] text-slate-600 dark:text-slate-300">
                     <input
                       type="checkbox"
                       checked={graphConfig.showGrid ?? false}
                       onChange={e => setGraphConfig({ ...graphConfig, showGrid: e.target.checked })}
                       className="rounded text-teal-600"
                     />
-                    🌐 Lưới tọa độ
+                    <span>Lưới ô</span>
                   </label>
                 </div>
               </div>
@@ -1490,28 +2069,77 @@ export default function FunctionGraphTool({ apiKey, model }: Props) {
           </div>
 
           <div className="w-full flex items-center justify-center p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 overflow-x-auto">
-            {/* Canvas BBT */}
-            <div className={activeSubTab === 'bbt' ? 'block' : 'hidden'}>
-              <canvas
-                ref={bbtCanvasRef}
-                className="max-w-full h-auto rounded-lg shadow-xs bg-white border border-slate-200"
-              />
-            </div>
+
 
             {/* Canvas Đồ thị Oxy */}
-            <div className={activeSubTab === 'graph' ? 'block' : 'hidden'}>
+            <div className={`relative ${activeSubTab === 'graph' ? 'block' : 'hidden'}`}>
               <canvas
                 ref={graphCanvasRef}
-                className="max-w-full h-auto rounded-lg shadow-xs bg-white border border-slate-200"
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerLeave={handleCanvasPointerUp}
+                onContextMenu={handleCanvasContextMenu}
+                className={`max-w-full h-auto rounded-lg shadow-xs bg-white border border-slate-200 select-none touch-none ${getCanvasCursor()}`}
+                title="Click & kéo trực tiếp chữ O, số trên trục hoặc Text. Nhấp chuột phải vào Text để xóa nhanh!"
               />
+
+              {/* Lớp phủ tương tác nhanh cho Custom Text trên đồ thị */}
+              {(() => {
+                if (!selectedCustomTextId) return null;
+                const selectedText = graphConfig.customTexts?.find(t => t.id === selectedCustomTextId);
+                const selectedHitbox = labelHitboxes.find(h => h.type === 'custom_text' && h.customTextId === selectedCustomTextId);
+                if (!selectedText || !selectedHitbox) return null;
+
+                const leftPercent = ((selectedHitbox.x + selectedHitbox.width / 2) / 440) * 100;
+                const topPercent = (selectedHitbox.y / 400) * 100;
+
+                return (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${leftPercent}%`,
+                      top: `${Math.max(2, topPercent - 5)}%`,
+                      transform: 'translate(-50%, -100%)',
+                      zIndex: 30
+                    }}
+                    className="pointer-events-auto flex items-center gap-1.5 bg-slate-900/95 text-white px-2.5 py-1 rounded-full shadow-xl border border-teal-500/50 backdrop-blur-md animate-fade-in text-xs whitespace-nowrap"
+                  >
+                    <span className="font-mono font-bold text-amber-300">
+                      {selectedText.text}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveCustomText(selectedText.id);
+                        setSelectedCustomTextId(null);
+                      }}
+                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-full font-bold flex items-center gap-1 text-[11px] transition shadow-xs cursor-pointer"
+                      title="Xóa text này khỏi đồ thị (Phím tắt: Delete hoặc Backspace)"
+                    >
+                      <Trash2 size={12} />
+                      <span>Xóa</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedCustomTextId(null);
+                      }}
+                      className="p-0.5 text-slate-400 hover:text-white rounded-full transition cursor-pointer"
+                      title="Bỏ chọn"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
-
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 text-center leading-relaxed">
-            💡 <strong>Tối ưu hóa Word:</strong> Khi nhấn <em>"Copy ảnh (Ctrl+V vào Word)"</em>, ảnh tự động nhúng 300 DPI — dán vào Word sẽ có <strong>kích thước vừa vặn (~8 - 11 cm)</strong> và <strong>chữ to đậm rõ nét</strong> đúng chuẩn trình bày đề thi!
-          </p>
         </div>
       </div>
+      )}
     </div>
   );
 }

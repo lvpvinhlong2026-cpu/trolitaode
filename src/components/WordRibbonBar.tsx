@@ -19,6 +19,8 @@ import {
   ChevronUp, 
   ChevronDown,
   Upload,
+  FileSpreadsheet,
+  Table as TableIcon,
   Sun,
   Moon,
   GraduationCap,
@@ -82,10 +84,12 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
     switch (tab) {
       case 'exam_full':
       case 'matrix_full':
+      case 'matrix_from_exam':
       case 'cv7991':
       case 'similar':
       case 'critique':
         return 'khao_thi';
+      case 'bbt_tool':
       case 'function_graph':
       case 'geometry':
         return 'do_thi';
@@ -118,13 +122,17 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
           {
             id: 'exam_full',
             label: 'Đề Thi Chuẩn 4 Phần',
-            icon: <FileCheck2 size={19} className="text-emerald-600 dark:text-emerald-400" />,
-            badge: 'CV 7991'
+            icon: <FileCheck2 size={19} className="text-emerald-600 dark:text-emerald-400" />
           },
           {
             id: 'matrix_full',
             label: 'Ma Trận & Đặc Tả 10.0đ',
             icon: <Grid3X3 size={19} className="text-purple-600 dark:text-purple-400" />
+          },
+          {
+            id: 'matrix_from_exam',
+            label: 'Tạo Ma Trận Từ Đề',
+            icon: <FileSpreadsheet size={19} className="text-indigo-600 dark:text-indigo-400" />
           }
         ]
       },
@@ -157,24 +165,25 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
     ],
     do_thi: [
       {
-        groupTitle: 'Giải Tích (300 DPI)',
+        groupTitle: 'Đồ Họa Toán Học (300 DPI)',
         tools: [
+          {
+            id: 'bbt_tool',
+            label: 'Bảng Biến Thiên 300 DPI',
+            icon: <TableIcon size={19} className="text-purple-600 dark:text-purple-400" />,
+            badge: 'Tự động'
+          },
           {
             id: 'function_graph',
-            label: 'Bảng Biến Thiên & Đồ Thị Oxy',
-            icon: <TrendingUp size={19} className="text-blue-600 dark:text-blue-400" />,
+            label: 'Đồ Thị Hàm Số Oxy',
+            icon: <TrendingUp size={19} className="text-teal-600 dark:text-teal-400" />,
             badge: '300 DPI'
-          }
-        ]
-      },
-      {
-        groupTitle: 'Hình Học Không Gian',
-        tools: [
+          },
           {
             id: 'geometry',
-            label: 'Hình Học 3D & GeoGebra',
-            icon: <Box size={19} className="text-indigo-600 dark:text-indigo-400" />,
-            badge: '3D'
+            label: 'Thước Kẻ & GSP 3D',
+            icon: <Box size={19} className="text-amber-600 dark:text-amber-400" />,
+            badge: 'GSP 3D'
           }
         ]
       }
@@ -220,9 +229,6 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
           </div>
           <span className="font-extrabold tracking-tight text-slate-800 dark:text-slate-100 text-xs uppercase flex items-center gap-2">
             TRỢ LÍ TẠO ĐỀ
-            <span className="hidden md:inline-block text-[10px] px-1.5 py-0.2 rounded font-semibold bg-teal-100/70 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
-              CV 7991
-            </span>
           </span>
         </div>
 
@@ -364,9 +370,6 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
                   );
                 })}
               </div>
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block text-center mt-auto self-end pt-1">
-                {group.groupTitle}
-              </span>
             </div>
           ))}
         </div>

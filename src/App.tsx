@@ -24,9 +24,12 @@ import { QuickBookUploadBar } from './components/QuickBookUploadBar';
 import { BookUploadModal } from './components/BookUploadModal';
 import { ParsedLessonItem } from './utils/bookParser';
 import CV7991ExamGenerator from './components/CV7991ExamGenerator';
+import MatrixFromExamGenerator from './components/MatrixFromExamGenerator';
 import SimilarExamGenerator from './components/SimilarExamGenerator';
 import ExamCritiqueTool from './components/ExamCritiqueTool';
 import FunctionGraphTool from './components/FunctionGraphTool';
+import TableVariationTool from './components/TableVariationTool';
+import GspSketchpad from './components/GspSketchpad';
 import GeometryTool from './components/GeometryTool';
 import UserGuide from './components/UserGuide';
 import SettingsForm from './components/SettingsForm';
@@ -34,9 +37,11 @@ import SettingsForm from './components/SettingsForm';
 export type ActiveTabType = 
   | 'exam_full'
   | 'matrix_full'
+  | 'matrix_from_exam'
   | 'cv7991' 
   | 'similar' 
   | 'critique'
+  | 'bbt_tool'
   | 'function_graph' 
   | 'geometry' 
   | 'guide';
@@ -229,8 +234,9 @@ export default function App() {
       case 'cv7991': return 'Sinh Đề Theo Ma Trận';
       case 'similar': return 'Nhân Bản Đề Tương Tự';
       case 'critique': return 'Phản Biện Đề Thi';
-      case 'function_graph': return 'Bảng Biến Thiên & Đồ Thị Oxy';
-      case 'geometry': return 'Hình Học 3D & GeoGebra';
+      case 'bbt_tool': return 'Bảng Biến Thiên Tự Động (300 DPI)';
+      case 'function_graph': return 'Đồ Thị Hàm Số Oxy (300 DPI)';
+      case 'geometry': return 'Hình Học Không Gian & GSP';
       case 'guide': default: return 'Hướng Dẫn Sử Dụng';
     }
   };
@@ -318,6 +324,19 @@ export default function App() {
             />
           </div>
 
+          {/* TAB TẠO MA TRẬN ĐẶC TẢ TỪ ĐỀ */}
+          <div className={activeTab === 'matrix_from_exam' ? 'block animate-fade-in' : 'hidden'}>
+            <MatrixFromExamGenerator 
+              apiKey={apiKey} 
+              model={preferredModel}
+              onApplyExam={(newExam) => {
+                setExamData(newExam);
+                showToast('Đã nạp Ma trận & Đặc tả vào hệ thống!');
+              }}
+              onNavigateToMatrix={() => setActiveTab('matrix_full')}
+            />
+          </div>
+
           {/* TAB 3: SINH ĐỀ AI THEO MA TRẬN (KÈM BBT VÀ ĐỒ THỊ) */}
           <div className={activeTab === 'cv7991' ? 'block animate-fade-in' : 'hidden'}>
             <CV7991ExamGenerator apiKey={apiKey} model={preferredModel} />
@@ -338,14 +357,19 @@ export default function App() {
             />
           </div>
 
-          {/* TAB 6: BẢNG BIẾN THIÊN & ĐỒ THỊ OXY 300 DPI */}
+          {/* TAB: BẢNG BIẾN THIÊN TỰ ĐỘNG 300 DPI */}
+          <div className={activeTab === 'bbt_tool' ? 'block animate-fade-in' : 'hidden'}>
+            <TableVariationTool />
+          </div>
+
+          {/* TAB: ĐỒ THỊ HÀM SỐ OXY 300 DPI */}
           <div className={activeTab === 'function_graph' ? 'block animate-fade-in' : 'hidden'}>
             <FunctionGraphTool apiKey={apiKey} model={preferredModel} />
           </div>
 
-          {/* TAB 6: HÌNH HỌC KHÔNG GIAN 3D & GEOGEBRA */}
+          {/* TAB: HÌNH HỌC KHÔNG GIAN 3D & THƯỚC KẺ COM-PA GSP */}
           <div className={activeTab === 'geometry' ? 'block animate-fade-in' : 'hidden'}>
-            <GeometryTool apiKey={apiKey} model={preferredModel} />
+            <GspSketchpad />
           </div>
 
           {/* TAB 7: HƯỚNG DẪN SỬ DỤNG */}

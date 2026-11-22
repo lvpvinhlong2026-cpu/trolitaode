@@ -4,7 +4,8 @@ import {
   Settings, Eye, Edit3, Image as ImageIcon, Plus, Trash2, ArrowRight,
   Printer, CheckCircle2, AlertCircle, RefreshCw, Layers, Compass, HelpCircle,
   Type, Ruler, Hash, Filter, RotateCcw, BookOpen, CheckSquare, Sparkle,
-  Sliders, ChevronRight as ChevronRightIcon, Lightbulb, SlidersHorizontal, Bookmark
+  Sliders, ChevronRight as ChevronRightIcon, Lightbulb, SlidersHorizontal, Bookmark,
+  TrendingUp, Table as TableIcon, Box
 } from 'lucide-react';
 import { 
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
@@ -16,6 +17,8 @@ import { renderGraphToCanvas, GraphConfig, evalGraphFunction, formatNumDisplay, 
 import { renderGeometry3DToCanvas, Geometry3DConfig } from '../utils/geometry3dEngine';
 import { callGeminiAI } from '../utils/gemini';
 import { KNTT_CURRICULUM } from '../utils/curriculumData';
+import { parseTextAndMathRuns, generateAutoDiagramForPlaceholder, dataUrlToBytes } from '../utils/docxExamBuilder';
+import { IntegratedDiagramModal, DiagramToolTab } from './IntegratedDiagramModal';
 
 // =========================================================================
 // INTERFACES & CẤU TRÚC DỮ LIỆU ĐỘNG THEO CV 7991
@@ -43,6 +46,29 @@ export interface Part2Question {
     c?: Part2SubItemDetail;
     d?: Part2SubItemDetail;
   };
+}
+
+export interface Part1Question {
+  id: string;
+  level: CognitiveLevel;
+  prompt?: string;
+  presetId?: string;
+}
+
+export interface Part3Question {
+  id: string;
+  level: CognitiveLevel;
+  prompt?: string;
+  presetId?: string;
+}
+
+export interface SingleQuestionPreset {
+  id: string;
+  grade: 10 | 12 | 'both';
+  category: string;
+  name: string;
+  level: CognitiveLevel;
+  prompt: string;
 }
 
 export interface StemPreset {
@@ -205,6 +231,238 @@ export const STEM_PRESETS: StemPreset[] = [
   }
 ];
 
+// =========================================================================
+// DANH MỤC GỢI Ý DẠNG BÀI PHẦN I (TRẮC NGHIỆM 4 LỰA CHỌN)
+// =========================================================================
+export const PART1_PRESETS: SingleQuestionPreset[] = [
+  // TOÁN 12 - KHẢO SÁT HÀM SỐ
+  {
+    id: 'p1_12_dong_bien_bbt',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Đơn điệu: Khoảng đồng biến, nghịch biến từ BBT/đồ thị',
+    level: 'NB',
+    prompt: 'Cho bảng biến thiên (hoặc đồ thị) của hàm số $y=f(x)$, xác định các khoảng đồng biến hoặc nghịch biến của hàm số.'
+  },
+  {
+    id: 'p1_12_cuc_tri_diem',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Cực trị: Điểm cực đại, cực tiểu của hàm số/đồ thị',
+    level: 'NB',
+    prompt: 'Tìm toạ độ điểm cực đại, điểm cực tiểu của đồ thị hàm số $y=f(x)$ thông qua bảng biến thiên hoặc đồ thị cho trước.'
+  },
+  {
+    id: 'p1_12_tiem_can',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Tiệm cận: Tiệm cận đứng và tiệm cận ngang',
+    level: 'NB',
+    prompt: 'Xác định phương trình đường tiệm cận đứng, tiệm cận ngang của đồ thị hàm số nhất biến $y=\\frac{ax+b}{cx+d}$.'
+  },
+  {
+    id: 'p1_12_max_min_doan',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'GTLN - GTNN: Giá trị lớn nhất, nhỏ nhất trên đoạn',
+    level: 'TH',
+    prompt: 'Tìm giá trị lớn nhất ($M$) và giá trị nhỏ nhất ($m$) của hàm số trên một đoạn $[a; b]$ cho trước.'
+  },
+  {
+    id: 'p1_12_tuong_giao_fx_m',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Tương giao: Biện luận số nghiệm phương trình f(x) = m',
+    level: 'TH',
+    prompt: 'Dựa vào bảng biến thiên hoặc đồ thị của hàm số $y=f(x)$, biện luận số nghiệm của phương trình $f(x)=m$.'
+  },
+  {
+    id: 'p1_12_tiep_tuyen',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Tiếp tuyến: Phương trình tiếp tuyến tại một điểm',
+    level: 'TH',
+    prompt: 'Viết phương trình tiếp tuyến của đồ thị hàm số tại điểm có hoành độ $x_0$ cho trước.'
+  },
+  {
+    id: 'p1_12_tham_so_don_dieu',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Tham số m: Điều kiện hàm số đơn điệu trên khoảng',
+    level: 'VD',
+    prompt: 'Tìm tất cả các giá trị thực của tham số $m$ để hàm số bậc ba đồng biến (hoặc nghịch biến) trên khoảng xác định.'
+  },
+  // TOÁN 12 - TOẠ ĐỘ OXYZ
+  {
+    id: 'p1_12_oxyz_toa_do',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Toạ độ điểm, vectơ, trung điểm, trọng tâm',
+    level: 'NB',
+    prompt: 'Trong không gian $Oxyz$, xác định toạ độ điểm, toạ độ trung điểm đoạn thẳng hoặc toạ độ vectơ $\\vec{u} = 2\\vec{i} - 3\\vec{j} + \\vec{k}$.'
+  },
+  {
+    id: 'p1_12_oxyz_mat_cau_tam_bk',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Toạ độ tâm và bán kính mặt cầu',
+    level: 'NB',
+    prompt: 'Trong không gian $Oxyz$, tìm toạ độ tâm $I$ và bán kính $R$ của mặt cầu $(S): (x-a)^2 + (y-b)^2 + (z-c)^2 = R^2$.'
+  },
+  {
+    id: 'p1_12_oxyz_tich_vo_huong',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Tích vô hướng và góc giữa hai vectơ',
+    level: 'TH',
+    prompt: 'Tính tích vô hướng $\\vec{a} \\cdot \\vec{b}$, cosin góc giữa hai vectơ hoặc điều kiện hai vectơ vuông góc trong $Oxyz$.'
+  },
+  {
+    id: 'p1_12_oxyz_pt_mat_phang',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Viết phương trình mặt phẳng cơ bản',
+    level: 'TH',
+    prompt: 'Viết phương trình mặt phẳng đi qua một điểm $M$ và có vectơ pháp tuyến $\\vec{n}$ hoặc đi qua 3 điểm toạ độ.'
+  },
+  {
+    id: 'p1_12_oxyz_khoang_cach_diem_mp',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Tính khoảng cách từ điểm đến mặt phẳng',
+    level: 'VD',
+    prompt: 'Tính khoảng cách từ điểm $M(x_0; y_0; z_0)$ đến mặt phẳng $(\\alpha): Ax + By + Cz + D = 0$.'
+  },
+  // TOÁN 12 - NGUYÊN HÀM & TÍCH PHÂN
+  {
+    id: 'p1_12_nguyen_ham_co_ban',
+    grade: 12,
+    category: 'Nguyên hàm & Tích phân',
+    name: 'Nguyên hàm: Bảng nguyên hàm hàm số cơ bản',
+    level: 'NB',
+    prompt: 'Tìm họ nguyên hàm $\\int f(x) dx$ của các hàm số luỹ thừa, hàm lượng giác cơ bản hoặc hàm mũ.'
+  },
+  {
+    id: 'p1_12_tich_phan_co_ban',
+    grade: 12,
+    category: 'Nguyên hàm & Tích phân',
+    name: 'Tích phân: Áp dụng công thức Newton-Leibniz',
+    level: 'TH',
+    prompt: 'Tính giá trị tích phân xác định cơ bản $\\int_a^b f(x)dx$ hoặc sử dụng tính chất tích phân cơ bản.'
+  },
+  {
+    id: 'p1_12_dien_tich_hinh_phang',
+    grade: 12,
+    category: 'Nguyên hàm & Tích phân',
+    name: 'Ứng dụng: Diện tích hình phẳng giới hạn bởi đồ thị',
+    level: 'VD',
+    prompt: 'Tính diện tích hình phẳng giới hạn bởi đồ thị hàm số $y=f(x)$, trục hoành và hai đường thẳng $x=a, x=b$.'
+  },
+  // TOÁN 12 - XÁC SUẤT
+  {
+    id: 'p1_12_bien_co_doc_lap',
+    grade: 12,
+    category: 'Xác suất & Thống kê',
+    name: 'Xác suất: Biến cố độc lập & Quy tắc nhân',
+    level: 'NB',
+    prompt: 'Cho hai biến cố độc lập $A$ và $B$ với xác suất $P(A), P(B)$, tính xác suất của biến cố giao $P(AB)$.'
+  },
+  {
+    id: 'p1_12_xs_dieu_kien',
+    grade: 12,
+    category: 'Xác suất & Thống kê',
+    name: 'Xác suất: Xác suất có điều kiện P(A|B)',
+    level: 'TH',
+    prompt: 'Tính xác suất có điều kiện $P(A|B) = \\frac{P(AB)}{P(B)}$ từ bảng thống kê hoặc dữ kiện bài toán.'
+  }
+];
+
+// =========================================================================
+// DANH MỤC GỢI Ý DẠNG BÀI PHẦN III (TRẮC NGHIỆM TRẢ LỜI NGẮN)
+// =========================================================================
+export const PART3_PRESETS: SingleQuestionPreset[] = [
+  {
+    id: 'p3_12_khoang_cach_cuc_tri',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'Cực trị: Tính khoảng cách giữa hai điểm cực trị',
+    level: 'TH',
+    prompt: 'Cho hàm số bậc ba $y=ax^3+bx^2+cx+d$. Tính khoảng cách giữa hai điểm cực trị của đồ thị hàm số.'
+  },
+  {
+    id: 'p3_12_max_min_ung_dung',
+    grade: 12,
+    category: 'Khảo sát hàm số & Đồ thị',
+    name: 'GTLN - GTNN: Giá trị biểu thức cực trị hoặc GTLN',
+    level: 'TH',
+    prompt: 'Tìm giá trị lớn nhất $M$ của hàm số $y=f(x)$ trên đoạn $[a; b]$. Điền kết quả là một số.'
+  },
+  {
+    id: 'p3_12_kinh_te_toi_uu_loi_nhuan',
+    grade: 12,
+    category: 'Ứng dụng thực tế',
+    name: 'Thực tế: Tìm mức sản lượng tối ưu hóa lợi nhuận',
+    level: 'VD',
+    prompt: 'Bài toán kinh tế: Một doanh nghiệp có hàm tổng chi phí $C(x)$ và giá bán $p(x)$. Tìm số lượng sản phẩm $x$ để lợi nhuận đạt giá trị lớn nhất.'
+  },
+  {
+    id: 'p3_12_the_tich_hop_toi_uu',
+    grade: 12,
+    category: 'Ứng dụng thực tế',
+    name: 'Thực tế: Tìm thể tích lớn nhất của hình hộp/thùng chứa',
+    level: 'VD',
+    prompt: 'Một miếng tôn hình chữ nhật kích thước $a \\times b$ được cắt ở 4 góc để gập thành hộp không nắp. Tính thể tích lớn nhất của chiếc hộp.'
+  },
+  {
+    id: 'p3_12_chuyen_dong_quang_duong',
+    grade: 12,
+    category: 'Ứng dụng thực tế',
+    name: 'Thực tế: Tính quãng đường di chuyển bằng tích phân',
+    level: 'VD',
+    prompt: 'Một ô tô đang chạy với vận tốc $v_0$ thì hãm phanh với gia tốc $a(t)$. Tính quãng đường ô tô đi được từ lúc đạp phanh đến khi dừng hẳn.'
+  },
+  {
+    id: 'p3_12_oxyz_khoang_cach_thuc_te',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Khoảng cách ngắn nhất trong mô hình không gian',
+    level: 'VD',
+    prompt: 'Trong không gian $Oxyz$ mô phỏng toạ độ ngọn hải đăng và đường đi của tàu thuỷ. Tính khoảng cách ngắn nhất từ tàu đến hải đăng.'
+  },
+  {
+    id: 'p3_12_oxyz_the_tich_khoi',
+    grade: 12,
+    category: 'Toạ độ Oxyz',
+    name: 'Oxyz: Tính thể tích khối tứ diện trong không gian',
+    level: 'TH',
+    prompt: 'Trong không gian $Oxyz$, cho 4 điểm $A, B, C, D$. Tính thể tích của khối tứ diện $ABCD$.'
+  },
+  {
+    id: 'p3_12_tich_phan_dien_tich_thuc_te',
+    grade: 12,
+    category: 'Nguyên hàm & Tích phân',
+    name: 'Tích phân: Tính diện tích mặt cắt / bồn hoa hình elip-parabol',
+    level: 'VD',
+    prompt: 'Ứng dụng tích phân tính diện tích mảnh đất hình cong giới hạn bởi đường cong parabol và đường thẳng (kết quả làm tròn đến hàng phần mười).'
+  },
+  {
+    id: 'p3_12_bayes_xac_suat_y_te',
+    grade: 12,
+    category: 'Xác suất & Thống kê',
+    name: 'Xác suất: Tính xác suất bằng công thức Bayes trong y tế',
+    level: 'VDC',
+    prompt: 'Một xét nghiệm y tế có độ nhạy $98\\%$ và độ đặc hiệu $95\\%$, tỉ lệ người mắc bệnh trong cộng đồng là $1\\%$. Tính xác suất một người thực sự mắc bệnh khi có kết quả dương tính.'
+  },
+  {
+    id: 'p3_12_tham_so_cuc_tri_khoang_cach',
+    grade: 12,
+    category: 'Vận dụng cao',
+    name: 'Vận dụng cao: Tìm m để tam giác tạo bởi cực trị có diện tích S',
+    level: 'VDC',
+    prompt: 'Tìm tất cả giá trị thực của tham số $m$ để đồ thị hàm số có 3 điểm cực trị tạo thành một tam giác có diện tích bằng $S_0$.'
+  }
+];
+
 export interface MatrixTopicRow {
   id: string;
   topic: string;
@@ -213,6 +471,7 @@ export interface MatrixTopicRow {
   p1_th: number;
   p1_vd: number;
   p1_vdc: number;
+  p1_questions?: Part1Question[];
   // Phần II: Danh sách các câu Đúng / Sai (mỗi câu 1.0đ có 4 ý a, b, c, d với mức độ riêng)
   p2_questions: Part2Question[];
   // Phần III: Trả lời ngắn (6 câu, mỗi câu 0.5đ = 3.0đ)
@@ -220,6 +479,7 @@ export interface MatrixTopicRow {
   p3_th: number;
   p3_vd: number;
   p3_vdc: number;
+  p3_questions?: Part3Question[];
 }
 
 export interface SpecItem {
@@ -248,6 +508,14 @@ function getDefaultMatrixRows12(): MatrixTopicRow[] {
       id: 'm1',
       topic: 'Ứng dụng đạo hàm để khảo sát và vẽ đồ thị hàm số',
       p1_nb: 3, p1_th: 2, p1_vd: 1, p1_vdc: 0,
+      p1_questions: [
+        { id: 'q12_p1_1', level: 'NB', prompt: 'Nhận biết khoảng đồng biến, nghịch biến của hàm số từ bảng biến thiên hoặc đồ thị' },
+        { id: 'q12_p1_2', level: 'NB', prompt: 'Tìm toạ độ điểm cực đại, điểm cực tiểu của đồ thị hàm số $y=f(x)$' },
+        { id: 'q12_p1_3', level: 'NB', prompt: 'Xác định phương trình đường tiệm cận đứng, tiệm cận ngang của đồ thị hàm phân thức $y=\\frac{ax+b}{cx+d}$' },
+        { id: 'q12_p1_4', level: 'TH', prompt: 'Tìm giá trị lớn nhất, giá trị nhỏ nhất của hàm số trên một đoạn $[a; b]$ cho trước' },
+        { id: 'q12_p1_5', level: 'TH', prompt: 'Biện luận số nghiệm của phương trình $f(x)=m$ dựa vào đồ thị hoặc bảng biến thiên' },
+        { id: 'q12_p1_6', level: 'VD', prompt: 'Tìm tham số $m$ để hàm số bậc ba đồng biến hoặc nghịch biến trên khoảng xác định' }
+      ],
       p2_questions: [
         {
           id: 'q12_1',
@@ -276,12 +544,22 @@ function getDefaultMatrixRows12(): MatrixTopicRow[] {
           }
         }
       ],
-      p3_nb: 0, p3_th: 1, p3_vd: 1, p3_vdc: 0
+      p3_nb: 0, p3_th: 1, p3_vd: 1, p3_vdc: 0,
+      p3_questions: [
+        { id: 'q12_p3_1', level: 'TH', prompt: 'Tính khoảng cách giữa hai điểm cực trị của đồ thị hàm số bậc ba' },
+        { id: 'q12_p3_2', level: 'VD', prompt: 'Bài toán kinh tế/thực tế: Tìm mức sản lượng tối ưu để lợi nhuận doanh nghiệp đạt cực đại' }
+      ]
     },
     {
       id: 'm2',
       topic: 'Hình học không gian & Toạ độ trong không gian (Oxyz)',
       p1_nb: 2, p1_th: 2, p1_vd: 0, p1_vdc: 0,
+      p1_questions: [
+        { id: 'q12_p1_7', level: 'NB', prompt: 'Trong không gian $Oxyz$, xác định toạ độ điểm, toạ độ trung điểm hoặc toạ độ vectơ cơ bản' },
+        { id: 'q12_p1_8', level: 'NB', prompt: 'Nhận biết vectơ pháp tuyến của mặt phẳng hoặc toạ độ tâm, bán kính mặt cầu $(S)$' },
+        { id: 'q12_p1_9', level: 'TH', prompt: 'Tính tích vô hướng, độ dài vectơ hoặc cosin góc giữa hai vectơ trong không gian $Oxyz$' },
+        { id: 'q12_p1_10', level: 'TH', prompt: 'Viết phương trình mặt phẳng đi qua một điểm và vuông góc với đường thẳng cho trước' }
+      ],
       p2_questions: [
         {
           id: 'q12_3',
@@ -297,12 +575,20 @@ function getDefaultMatrixRows12(): MatrixTopicRow[] {
           }
         }
       ],
-      p3_nb: 0, p3_th: 0, p3_vd: 1, p3_vdc: 1
+      p3_nb: 0, p3_th: 0, p3_vd: 1, p3_vdc: 1,
+      p3_questions: [
+        { id: 'q12_p3_3', level: 'VD', prompt: 'Tính khoảng cách từ điểm đến mặt phẳng trong không gian $Oxyz$ gắn với mô hình thực tế' },
+        { id: 'q12_p3_4', level: 'VDC', prompt: 'Mô hình không gian $Oxyz$: Tìm toạ độ vị trí trạm phát sóng hoặc camera để khoảng cách đạt giá trị tối ưu' }
+      ]
     },
     {
       id: 'm3',
       topic: 'Nguyên hàm, Tích phân hoặc Xác suất thống kê',
       p1_nb: 1, p1_th: 1, p1_vd: 0, p1_vdc: 0,
+      p1_questions: [
+        { id: 'q12_p1_11', level: 'NB', prompt: 'Nhận biết công thức nguyên hàm hàm số luỹ thừa, hàm lượng giác cơ bản hoặc hai biến cố độc lập' },
+        { id: 'q12_p1_12', level: 'TH', prompt: 'Tính giá trị tích phân xác định cơ bản $\\int_a^b f(x)dx$ hoặc xác suất có điều kiện $P(A|B)$' }
+      ],
       p2_questions: [
         {
           id: 'q12_4',
@@ -318,7 +604,11 @@ function getDefaultMatrixRows12(): MatrixTopicRow[] {
           }
         }
       ],
-      p3_nb: 0, p3_th: 1, p3_vd: 0, p3_vdc: 1
+      p3_nb: 0, p3_th: 1, p3_vd: 0, p3_vdc: 1,
+      p3_questions: [
+        { id: 'q12_p3_5', level: 'TH', prompt: 'Ứng dụng tích phân tính diện tích hình phẳng giới hạn bởi đồ thị hàm số và trục hoành' },
+        { id: 'q12_p3_6', level: 'VDC', prompt: 'Tính xác suất có điều kiện theo công thức Bayes trong bài toán y học / kiểm định chất lượng sản phẩm' }
+      ]
     }
   ];
 }
@@ -418,53 +708,71 @@ export function generateSpecFromMatrix(
 
   // 1. PHẦN I: TRẮC NGHIỆM 4 LỰA CHỌN (Mỗi câu tương ứng 1 dòng đặc tả)
   rows.forEach(row => {
-    for (let i = 0; i < (row.p1_nb || 0); i++) {
-      const qRef = `Câu ${qCountP1++} (Phần I)`;
-      result.push({
-        id: `spec_p1_nb_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Kiến thức cốt lõi (Trắc nghiệm 4 lựa chọn)',
-        questionRef: qRef,
-        level: 'NB',
-        part: 'P1',
-        requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'NB', qCountP1 - 1, grade)
+    if (row.p1_questions && row.p1_questions.length > 0) {
+      row.p1_questions.forEach(q => {
+        const qRef = `Câu ${qCountP1++} (Phần I)`;
+        const unitName = q.level === 'NB' ? 'Kiến thức cốt lõi (Trắc nghiệm 4 lựa chọn)' :
+                         q.level === 'TH' ? 'Hiểu bản chất và nhận dạng toán học' :
+                         q.level === 'VD' ? 'Vận dụng giải toán' : 'Vận dụng cao phối hợp kiến thức';
+        result.push({
+          id: `spec_p1_${row.id}_${q.id}`,
+          topic: row.topic,
+          unit: unitName,
+          questionRef: qRef,
+          level: q.level,
+          part: 'P1',
+          requirement: customReqMap.get(qRef) || q.prompt || getRequirementP1(row.topic, q.level, qCountP1 - 1, grade)
+        });
       });
-    }
-    for (let i = 0; i < (row.p1_th || 0); i++) {
-      const qRef = `Câu ${qCountP1++} (Phần I)`;
-      result.push({
-        id: `spec_p1_th_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Hiểu bản chất và nhận dạng toán học',
-        questionRef: qRef,
-        level: 'TH',
-        part: 'P1',
-        requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'TH', qCountP1 - 1, grade)
-      });
-    }
-    for (let i = 0; i < (row.p1_vd || 0); i++) {
-      const qRef = `Câu ${qCountP1++} (Phần I)`;
-      result.push({
-        id: `spec_p1_vd_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Vận dụng giải toán',
-        questionRef: qRef,
-        level: 'VD',
-        part: 'P1',
-        requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'VD', qCountP1 - 1, grade)
-      });
-    }
-    for (let i = 0; i < (row.p1_vdc || 0); i++) {
-      const qRef = `Câu ${qCountP1++} (Phần I)`;
-      result.push({
-        id: `spec_p1_vdc_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Vận dụng cao phối hợp kiến thức',
-        questionRef: qRef,
-        level: 'VDC',
-        part: 'P1',
-        requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'VDC', qCountP1 - 1, grade)
-      });
+    } else {
+      for (let i = 0; i < (row.p1_nb || 0); i++) {
+        const qRef = `Câu ${qCountP1++} (Phần I)`;
+        result.push({
+          id: `spec_p1_nb_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Kiến thức cốt lõi (Trắc nghiệm 4 lựa chọn)',
+          questionRef: qRef,
+          level: 'NB',
+          part: 'P1',
+          requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'NB', qCountP1 - 1, grade)
+        });
+      }
+      for (let i = 0; i < (row.p1_th || 0); i++) {
+        const qRef = `Câu ${qCountP1++} (Phần I)`;
+        result.push({
+          id: `spec_p1_th_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Hiểu bản chất và nhận dạng toán học',
+          questionRef: qRef,
+          level: 'TH',
+          part: 'P1',
+          requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'TH', qCountP1 - 1, grade)
+        });
+      }
+      for (let i = 0; i < (row.p1_vd || 0); i++) {
+        const qRef = `Câu ${qCountP1++} (Phần I)`;
+        result.push({
+          id: `spec_p1_vd_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Vận dụng giải toán',
+          questionRef: qRef,
+          level: 'VD',
+          part: 'P1',
+          requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'VD', qCountP1 - 1, grade)
+        });
+      }
+      for (let i = 0; i < (row.p1_vdc || 0); i++) {
+        const qRef = `Câu ${qCountP1++} (Phần I)`;
+        result.push({
+          id: `spec_p1_vdc_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Vận dụng cao phối hợp kiến thức',
+          questionRef: qRef,
+          level: 'VDC',
+          part: 'P1',
+          requirement: customReqMap.get(qRef) || getRequirementP1(row.topic, 'VDC', qCountP1 - 1, grade)
+        });
+      }
     }
   });
 
@@ -507,53 +815,71 @@ export function generateSpecFromMatrix(
 
   // 3. PHẦN III: TRẢ LỜI NGẮN (Mỗi câu tương ứng 1 dòng đặc tả)
   rows.forEach(row => {
-    for (let i = 0; i < (row.p3_nb || 0); i++) {
-      const qRef = `Câu ${qCountP3++} (Phần III)`;
-      result.push({
-        id: `spec_p3_nb_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Trả lời ngắn (Điền số kết quả)',
-        questionRef: qRef,
-        level: 'NB',
-        part: 'P3',
-        requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'NB', qCountP3 - 1, grade)
+    if (row.p3_questions && row.p3_questions.length > 0) {
+      row.p3_questions.forEach(q => {
+        const qRef = `Câu ${qCountP3++} (Phần III)`;
+        const unitName = q.level === 'NB' ? 'Trả lời ngắn (Điền số kết quả)' :
+                         q.level === 'TH' ? 'Trả lời ngắn (Tính toán kết quả)' :
+                         q.level === 'VD' ? 'Trả lời ngắn (Vận dụng giải toán)' : 'Trả lời ngắn (Bài toán thực tế / tối ưu)';
+        result.push({
+          id: `spec_p3_${row.id}_${q.id}`,
+          topic: row.topic,
+          unit: unitName,
+          questionRef: qRef,
+          level: q.level,
+          part: 'P3',
+          requirement: customReqMap.get(qRef) || q.prompt || getRequirementP3(row.topic, q.level, qCountP3 - 1, grade)
+        });
       });
-    }
-    for (let i = 0; i < (row.p3_th || 0); i++) {
-      const qRef = `Câu ${qCountP3++} (Phần III)`;
-      result.push({
-        id: `spec_p3_th_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Trả lời ngắn (Tính toán kết quả)',
-        questionRef: qRef,
-        level: 'TH',
-        part: 'P3',
-        requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'TH', qCountP3 - 1, grade)
-      });
-    }
-    for (let i = 0; i < (row.p3_vd || 0); i++) {
-      const qRef = `Câu ${qCountP3++} (Phần III)`;
-      result.push({
-        id: `spec_p3_vd_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Trả lời ngắn (Vận dụng giải toán)',
-        questionRef: qRef,
-        level: 'VD',
-        part: 'P3',
-        requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'VD', qCountP3 - 1, grade)
-      });
-    }
-    for (let i = 0; i < (row.p3_vdc || 0); i++) {
-      const qRef = `Câu ${qCountP3++} (Phần III)`;
-      result.push({
-        id: `spec_p3_vdc_${row.id}_${i}`,
-        topic: row.topic,
-        unit: 'Trả lời ngắn (Bài toán thực tế / tối ưu)',
-        questionRef: qRef,
-        level: 'VDC',
-        part: 'P3',
-        requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'VDC', qCountP3 - 1, grade)
-      });
+    } else {
+      for (let i = 0; i < (row.p3_nb || 0); i++) {
+        const qRef = `Câu ${qCountP3++} (Phần III)`;
+        result.push({
+          id: `spec_p3_nb_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Trả lời ngắn (Điền số kết quả)',
+          questionRef: qRef,
+          level: 'NB',
+          part: 'P3',
+          requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'NB', qCountP3 - 1, grade)
+        });
+      }
+      for (let i = 0; i < (row.p3_th || 0); i++) {
+        const qRef = `Câu ${qCountP3++} (Phần III)`;
+        result.push({
+          id: `spec_p3_th_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Trả lời ngắn (Tính toán kết quả)',
+          questionRef: qRef,
+          level: 'TH',
+          part: 'P3',
+          requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'TH', qCountP3 - 1, grade)
+        });
+      }
+      for (let i = 0; i < (row.p3_vd || 0); i++) {
+        const qRef = `Câu ${qCountP3++} (Phần III)`;
+        result.push({
+          id: `spec_p3_vd_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Trả lời ngắn (Vận dụng giải toán)',
+          questionRef: qRef,
+          level: 'VD',
+          part: 'P3',
+          requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'VD', qCountP3 - 1, grade)
+        });
+      }
+      for (let i = 0; i < (row.p3_vdc || 0); i++) {
+        const qRef = `Câu ${qCountP3++} (Phần III)`;
+        result.push({
+          id: `spec_p3_vdc_${row.id}_${i}`,
+          topic: row.topic,
+          unit: 'Trả lời ngắn (Bài toán thực tế / tối ưu)',
+          questionRef: qRef,
+          level: 'VDC',
+          part: 'P3',
+          requirement: customReqMap.get(qRef) || getRequirementP3(row.topic, 'VDC', qCountP3 - 1, grade)
+        });
+      }
     }
   });
 
@@ -817,6 +1143,33 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
+  // State điều khiển Modal tích hợp 3 công cụ vẽ ảnh 300 DPI
+  const [diagramModalOpen, setDiagramModalOpen] = useState<boolean>(false);
+  const [diagramInitialTab, setDiagramInitialTab] = useState<DiagramToolTab>('graph');
+  const [targetQuestionForDiagram, setTargetQuestionForDiagram] = useState<number | string | undefined>(undefined);
+
+  const handleOpenDiagramModal = (tab: DiagramToolTab, questionNumber?: number | string) => {
+    setDiagramInitialTab(tab);
+    setTargetQuestionForDiagram(questionNumber);
+    setDiagramModalOpen(true);
+  };
+
+  const handleInsertDiagramToExam = (dataUrl: string, qNum?: number | string) => {
+    const imgMarkdown = `\n\n![Hình vẽ ${qNum ? `Câu ${qNum}` : 'minh họa'}](${dataUrl})\n\n`;
+    if (qNum) {
+      const regex = new RegExp(`((?:\\*\\*|\\*|<b>)?Câu\\s+${qNum}\\..*?\\n)`, 'i');
+      if (regex.test(examMarkdown)) {
+        setExamMarkdown(examMarkdown.replace(regex, `$1${imgMarkdown}`));
+      } else {
+        setExamMarkdown(prev => prev + imgMarkdown);
+      }
+    } else {
+      setExamMarkdown(prev => prev + imgMarkdown);
+    }
+    setCopySuccess(`Đã chèn ảnh đồ họa 300 DPI vào ${qNum ? `Câu ${qNum}` : 'đề thi'}!`);
+    setTimeout(() => setCopySuccess(null), 3500);
+  };
+
   // Khởi tạo Nội dung Đề thi hoàn chỉnh kèm sẵn ảnh BBT, Đồ thị
   const [examMarkdown, setExamMarkdown] = useState<string>(() => {
     const initialImgs = generateDefaultExamImages();
@@ -935,6 +1288,320 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
   const pctTH = totalScore > 0 ? Math.round((scoreTH / totalScore) * 100) : 0;
   const pctVD = totalScore > 0 ? Math.round((scoreVD / totalScore) * 100) : 0;
   const pctVDC = totalScore > 0 ? Math.round((scoreVDC / totalScore) * 100) : 0;
+
+  // Helper lấy danh sách câu hỏi Phần I của dòng (tự động fallback nếu chưa có)
+  const getRowP1Questions = (r: MatrixTopicRow): Part1Question[] => {
+    if (r.p1_questions && r.p1_questions.length > 0) {
+      return r.p1_questions;
+    }
+    const list: Part1Question[] = [];
+    let cnt = 1;
+    for (let i = 0; i < (r.p1_nb || 0); i++) {
+      list.push({ id: `p1_${r.id}_nb_${i}`, level: 'NB', prompt: getRequirementP1(r.topic, 'NB', cnt++, grade || 12) });
+    }
+    for (let i = 0; i < (r.p1_th || 0); i++) {
+      list.push({ id: `p1_${r.id}_th_${i}`, level: 'TH', prompt: getRequirementP1(r.topic, 'TH', cnt++, grade || 12) });
+    }
+    for (let i = 0; i < (r.p1_vd || 0); i++) {
+      list.push({ id: `p1_${r.id}_vd_${i}`, level: 'VD', prompt: getRequirementP1(r.topic, 'VD', cnt++, grade || 12) });
+    }
+    for (let i = 0; i < (r.p1_vdc || 0); i++) {
+      list.push({ id: `p1_${r.id}_vdc_${i}`, level: 'VDC', prompt: getRequirementP1(r.topic, 'VDC', cnt++, grade || 12) });
+    }
+    return list;
+  };
+
+  // Helper lấy danh sách câu hỏi Phần III của dòng (tự động fallback nếu chưa có)
+  const getRowP3Questions = (r: MatrixTopicRow): Part3Question[] => {
+    if (r.p3_questions && r.p3_questions.length > 0) {
+      return r.p3_questions;
+    }
+    const list: Part3Question[] = [];
+    let cnt = 1;
+    for (let i = 0; i < (r.p3_nb || 0); i++) {
+      list.push({ id: `p3_${r.id}_nb_${i}`, level: 'NB', prompt: getRequirementP3(r.topic, 'NB', cnt++, grade || 12) });
+    }
+    for (let i = 0; i < (r.p3_th || 0); i++) {
+      list.push({ id: `p3_${r.id}_th_${i}`, level: 'TH', prompt: getRequirementP3(r.topic, 'TH', cnt++, grade || 12) });
+    }
+    for (let i = 0; i < (r.p3_vd || 0); i++) {
+      list.push({ id: `p3_${r.id}_vd_${i}`, level: 'VD', prompt: getRequirementP3(r.topic, 'VD', cnt++, grade || 12) });
+    }
+    for (let i = 0; i < (r.p3_vdc || 0); i++) {
+      list.push({ id: `p3_${r.id}_vdc_${i}`, level: 'VDC', prompt: getRequirementP3(r.topic, 'VDC', cnt++, grade || 12) });
+    }
+    return list;
+  };
+
+  // Tính số thứ tự câu hỏi Phần I liên tục trên toàn ma trận
+  const getOverallP1Index = (targetRowId: string, qIdx: number): number => {
+    let count = 0;
+    for (const r of matrixRows) {
+      if (r.id === targetRowId) {
+        return count + qIdx + 1;
+      }
+      count += getRowP1Questions(r).length;
+    }
+    return count + 1;
+  };
+
+  // Tính số thứ tự câu hỏi Phần III liên tục trên toàn ma trận
+  const getOverallP3Index = (targetRowId: string, qIdx: number): number => {
+    let count = 0;
+    for (const r of matrixRows) {
+      if (r.id === targetRowId) {
+        return count + qIdx + 1;
+      }
+      count += getRowP3Questions(r).length;
+    }
+    return count + 1;
+  };
+
+  // State mở rộng mô tả câu hỏi Phần I và Phần III
+  const [expandedP1Rows, setExpandedP1Rows] = useState<Record<string, boolean>>({ m1: true, m2: true, m3: true });
+  const [expandedP3Rows, setExpandedP3Rows] = useState<Record<string, boolean>>({ m1: true, m2: true, m3: true });
+
+  const toggleExpandP1Row = (rowId: string) => {
+    setExpandedP1Rows(prev => ({ ...prev, [rowId]: !prev[rowId] }));
+  };
+
+  const toggleExpandP3Row = (rowId: string) => {
+    setExpandedP3Rows(prev => ({ ...prev, [rowId]: !prev[rowId] }));
+  };
+
+  const syncRowCountsFromP1 = (questions: Part1Question[]) => ({
+    p1_nb: questions.filter(q => q.level === 'NB').length,
+    p1_th: questions.filter(q => q.level === 'TH').length,
+    p1_vd: questions.filter(q => q.level === 'VD').length,
+    p1_vdc: questions.filter(q => q.level === 'VDC').length,
+  });
+
+  const syncRowCountsFromP3 = (questions: Part3Question[]) => ({
+    p3_nb: questions.filter(q => q.level === 'NB').length,
+    p3_th: questions.filter(q => q.level === 'TH').length,
+    p3_vd: questions.filter(q => q.level === 'VD').length,
+    p3_vdc: questions.filter(q => q.level === 'VDC').length,
+  });
+
+  const handleUpdateP1Count = (rowId: string, level: CognitiveLevel, newCount: number) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const current = [...getRowP1Questions(r)];
+      const withLevel = current.filter(q => q.level === level);
+      const diff = newCount - withLevel.length;
+      let updated = [...current];
+      if (diff > 0) {
+        for (let i = 0; i < diff; i++) {
+          updated.push({
+            id: `p1_${r.id}_${level.toLowerCase()}_${Date.now()}_${i}`,
+            level,
+            prompt: getRequirementP1(r.topic, level, updated.length + 1, grade || 12)
+          });
+        }
+      } else if (diff < 0) {
+        let toRemove = Math.abs(diff);
+        for (let i = updated.length - 1; i >= 0 && toRemove > 0; i--) {
+          if (updated[i].level === level) {
+            updated.splice(i, 1);
+            toRemove--;
+          }
+        }
+      }
+      return {
+        ...r,
+        ...syncRowCountsFromP1(updated),
+        p1_questions: updated
+      };
+    }));
+  };
+
+  const handleUpdateP1QuestionPrompt = (rowId: string, qIdx: number, prompt: string) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP1Questions(r)];
+      if (questions[qIdx]) {
+        questions[qIdx] = { ...questions[qIdx], prompt };
+      }
+      return { ...r, p1_questions: questions };
+    }));
+  };
+
+  const handleUpdateP1QuestionLevel = (rowId: string, qIdx: number, level: CognitiveLevel) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP1Questions(r)];
+      if (questions[qIdx]) {
+        questions[qIdx] = { ...questions[qIdx], level };
+      }
+      return {
+        ...r,
+        ...syncRowCountsFromP1(questions),
+        p1_questions: questions
+      };
+    }));
+  };
+
+  const handleApplyP1Preset = (rowId: string, qIdx: number, presetId: string) => {
+    const preset = PART1_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP1Questions(r)];
+      if (questions[qIdx]) {
+        questions[qIdx] = {
+          ...questions[qIdx],
+          presetId: preset.id,
+          prompt: preset.prompt,
+          level: preset.level
+        };
+      }
+      return {
+        ...r,
+        ...syncRowCountsFromP1(questions),
+        p1_questions: questions
+      };
+    }));
+  };
+
+  const handleAddP1Question = (rowId: string, level: CognitiveLevel = 'NB') => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP1Questions(r)];
+      questions.push({
+        id: `p1_${r.id}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        level,
+        prompt: getRequirementP1(r.topic, level, questions.length + 1, grade || 12)
+      });
+      return {
+        ...r,
+        ...syncRowCountsFromP1(questions),
+        p1_questions: questions
+      };
+    }));
+    setExpandedP1Rows(prev => ({ ...prev, [rowId]: true }));
+  };
+
+  const handleRemoveP1Question = (rowId: string, qIdx: number) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP1Questions(r)].filter((_, idx) => idx !== qIdx);
+      return {
+        ...r,
+        ...syncRowCountsFromP1(questions),
+        p1_questions: questions
+      };
+    }));
+  };
+
+  const handleUpdateP3Count = (rowId: string, level: CognitiveLevel, newCount: number) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const current = [...getRowP3Questions(r)];
+      const withLevel = current.filter(q => q.level === level);
+      const diff = newCount - withLevel.length;
+      let updated = [...current];
+      if (diff > 0) {
+        for (let i = 0; i < diff; i++) {
+          updated.push({
+            id: `p3_${r.id}_${level.toLowerCase()}_${Date.now()}_${i}`,
+            level,
+            prompt: getRequirementP3(r.topic, level, updated.length + 1, grade || 12)
+          });
+        }
+      } else if (diff < 0) {
+        let toRemove = Math.abs(diff);
+        for (let i = updated.length - 1; i >= 0 && toRemove > 0; i--) {
+          if (updated[i].level === level) {
+            updated.splice(i, 1);
+            toRemove--;
+          }
+        }
+      }
+      return {
+        ...r,
+        ...syncRowCountsFromP3(updated),
+        p3_questions: updated
+      };
+    }));
+  };
+
+  const handleUpdateP3QuestionPrompt = (rowId: string, qIdx: number, prompt: string) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP3Questions(r)];
+      if (questions[qIdx]) {
+        questions[qIdx] = { ...questions[qIdx], prompt };
+      }
+      return { ...r, p3_questions: questions };
+    }));
+  };
+
+  const handleUpdateP3QuestionLevel = (rowId: string, qIdx: number, level: CognitiveLevel) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP3Questions(r)];
+      if (questions[qIdx]) {
+        questions[qIdx] = { ...questions[qIdx], level };
+      }
+      return {
+        ...r,
+        ...syncRowCountsFromP3(questions),
+        p3_questions: questions
+      };
+    }));
+  };
+
+  const handleApplyP3Preset = (rowId: string, qIdx: number, presetId: string) => {
+    const preset = PART3_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP3Questions(r)];
+      if (questions[qIdx]) {
+        questions[qIdx] = {
+          ...questions[qIdx],
+          presetId: preset.id,
+          prompt: preset.prompt,
+          level: preset.level
+        };
+      }
+      return {
+        ...r,
+        ...syncRowCountsFromP3(questions),
+        p3_questions: questions
+      };
+    }));
+  };
+
+  const handleAddP3Question = (rowId: string, level: CognitiveLevel = 'TH') => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP3Questions(r)];
+      questions.push({
+        id: `p3_${r.id}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        level,
+        prompt: getRequirementP3(r.topic, level, questions.length + 1, grade || 12)
+      });
+      return {
+        ...r,
+        ...syncRowCountsFromP3(questions),
+        p3_questions: questions
+      };
+    }));
+    setExpandedP3Rows(prev => ({ ...prev, [rowId]: true }));
+  };
+
+  const handleRemoveP3Question = (rowId: string, qIdx: number) => {
+    setMatrixRows(matrixRows.map(r => {
+      if (r.id !== rowId) return r;
+      const questions = [...getRowP3Questions(r)].filter((_, idx) => idx !== qIdx);
+      return {
+        ...r,
+        ...syncRowCountsFromP3(questions),
+        p3_questions: questions
+      };
+    }));
+  };
 
   // Tính số thứ tự câu hỏi Phần II liên tục trên toàn ma trận
   const getOverallP2Index = (targetRowId: string, qIdx: number): number => {
@@ -1348,11 +2015,20 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
     }
     setIsGeneratingAI(true);
     try {
-      // 1. Tổng hợp cấu hình Phần I từ ma trận
-      const p1TopicDetails = matrixRows
-        .filter(r => (r.p1_nb || 0) + (r.p1_th || 0) + (r.p1_vd || 0) + (r.p1_vdc || 0) > 0)
-        .map(r => `- Chủ đề: "${r.topic}": ${r.p1_nb || 0} câu NB, ${r.p1_th || 0} câu TH, ${r.p1_vd || 0} câu VD, ${r.p1_vdc || 0} câu VDC`)
-        .join('\n');
+      // 1. Tổng hợp cấu hình Phần I từ ma trận kèm mô tả chi tiết từng câu
+      let p1TopicDetails = '';
+      let p1Index = 1;
+      matrixRows.forEach(row => {
+        const qList = getRowP1Questions(row);
+        if (qList.length > 0) {
+          p1TopicDetails += `\n* Chủ đề: "${row.topic}" (${qList.length} câu):\n`;
+          qList.forEach(q => {
+            const desc = q.prompt ? `Mô tả yêu cầu: "${q.prompt}"` : `Yêu cầu: ${getRequirementP1(row.topic, q.level, p1Index, grade || 12)}`;
+            p1TopicDetails += `  - Câu ${p1Index} [Mức độ ${q.level}]: ${desc}\n`;
+            p1Index++;
+          });
+        }
+      });
 
       // 2. Tổng hợp cấu hình Phần II (kèm ngữ cảnh câu dẫn, mức độ từng ý, đa chủ đề)
       let part2Description = '';
@@ -1371,11 +2047,20 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
         });
       });
 
-      // 3. Tổng hợp cấu hình Phần III từ ma trận
-      const p3TopicDetails = matrixRows
-        .filter(r => (r.p3_nb || 0) + (r.p3_th || 0) + (r.p3_vd || 0) + (r.p3_vdc || 0) > 0)
-        .map(r => `- Chủ đề: "${r.topic}": ${r.p3_nb || 0} câu NB, ${r.p3_th || 0} câu TH, ${r.p3_vd || 0} câu VD, ${r.p3_vdc || 0} câu VDC`)
-        .join('\n');
+      // 3. Tổng hợp cấu hình Phần III từ ma trận kèm mô tả chi tiết từng câu
+      let p3TopicDetails = '';
+      let p3Index = 1;
+      matrixRows.forEach(row => {
+        const qList = getRowP3Questions(row);
+        if (qList.length > 0) {
+          p3TopicDetails += `\n* Chủ đề: "${row.topic}" (${qList.length} câu):\n`;
+          qList.forEach(q => {
+            const desc = q.prompt ? `Mô tả yêu cầu: "${q.prompt}"` : `Yêu cầu: ${getRequirementP3(row.topic, q.level, p3Index, grade || 12)}`;
+            p3TopicDetails += `  - Câu ${p3Index} [Mức độ ${q.level}]: ${desc}\n`;
+            p3Index++;
+          });
+        }
+      });
 
       const prompt = `Bạn là chuyên gia khảo thí hàng đầu của Bộ GD&ĐT Việt Nam. Hãy soạn một ĐỀ THI TOÁN ${grade || 12} THEO ĐÚNG CẤU TRÚC CÔNG VĂN 7991 MỚI NHẤT VÀ BÁM SÁT 100% MA TRẬN & BẢN ĐẶC TẢ SAU:
 
@@ -1390,7 +2075,7 @@ ${part2Description}
 ${p3TopicDetails}
 
 II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
-- BÁM SÁT 100% ngữ cảnh câu dẫn và các chủ đề nhánh từng ý a, b, c, d của Phần II như đã quy định ở trên.
+- BÁM SÁT 100% mô tả yêu cầu câu hỏi của Phần I, Phần II và Phần III như đã quy định ở trên.
 - Soạn thảo chuẩn Markdown và ký hiệu Toán học LaTeX đặt trong cặp dấu $...$ (ví dụ: $y = ax^3 + bx^2 + cx + d$).
 - Có ít nhất 2 câu khảo sát hàm số yêu cầu bảng biến thiên hoặc đồ thị (để lại vị trí để chèn ảnh).
 - Có ít nhất 1 câu hình học không gian (khối chóp, lăng trụ, Oxyz).
@@ -1616,19 +2301,29 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
           continue;
         }
 
-        const imgMatch = line.match(/!\[(.*?)\]\((data:image\/[a-zA-Z]+;base64,([^\)]+))\)/);
+        // Nhận diện cú pháp ảnh Markdown (Cả ảnh base64 lẫn placeholder mô tả)
+        const imgMatch = line.match(/!\[(.*?)\](?:\((.*?)\))?/);
         if (imgMatch) {
-          const altText = (imgMatch[1] || '').toLowerCase();
-          const base64Data = imgMatch[3];
-          try {
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let b = 0; b < binaryString.length; b++) {
-              bytes[b] = binaryString.charCodeAt(b);
-            }
+          const altText = (imgMatch[1] || '').trim();
+          const imgUrl = (imgMatch[2] || '').trim();
+          let bytes: Uint8Array | null = null;
 
-            const isGraph = altText.includes('đồ thị') || altText.includes('graph') || altText.includes('oxy');
-            const isGeo3D = altText.includes('hình') || altText.includes('3d') || altText.includes('không gian');
+          if (imgUrl.includes('base64,')) {
+            try {
+              bytes = dataUrlToBytes(imgUrl);
+            } catch (e) {
+              console.error('Lỗi chuyển ảnh sang docx:', e);
+            }
+          }
+
+          // Tự động sinh ảnh vẽ 300 DPI nếu là placeholder không kèm base64
+          if (!bytes) {
+            bytes = generateAutoDiagramForPlaceholder(altText || line);
+          }
+
+          if (bytes) {
+            const isGraph = altText.toLowerCase().includes('đồ thị') || altText.toLowerCase().includes('graph') || altText.toLowerCase().includes('oxy');
+            const isGeo3D = altText.toLowerCase().includes('hình') || altText.toLowerCase().includes('3d') || altText.toLowerCase().includes('không gian');
             let imgWidth = 400;
             let imgHeight = 168;
 
@@ -1655,10 +2350,8 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                 ]
               })
             );
-          } catch (e) {
-            console.error('Lỗi chuyển ảnh sang docx:', e);
+            continue;
           }
-          continue;
         }
 
         if (line.startsWith('#') || line.toUpperCase().includes('PHẦN I') || line.toUpperCase().includes('PHẦN II') || line.toUpperCase().includes('PHẦN III') || line.toUpperCase().includes('ĐÁP ÁN')) {
@@ -1681,18 +2374,14 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
 
         const isQuestionHeader = /^(\*\*|\*|<b>)?(Câu\s+\d+|Bài\s+\d+)/i.test(line);
 
+        // PHÂN TÍCH TOÀN BỘ CÔNG THỨC TOÁN HỌC THÀNH OFFICE MATH:
+        const runs = parseTextAndMathRuns(line, isQuestionHeader);
+
         docParagraphs.push(
           new Paragraph({
             spacing: { after: 100 },
             alignment: AlignmentType.LEFT,
-            children: [
-              new TextRun({
-                text: line.replace(/\*\*/g, '').replace(/<b>|<\/b>/g, ''),
-                bold: isQuestionHeader,
-                size: 24,
-                font: 'Times New Roman'
-              })
-            ]
+            children: runs
           })
         );
       }
@@ -2037,15 +2726,20 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
 
             {/* BẢNG MA TRẬN TƯƠNG TÁC ĐẦY ĐỦ CÁC CỘT */}
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="w-full text-xs text-left border-collapse min-w-[900px]">
+              <table className="w-full text-xs text-left border-collapse min-w-[1200px]">
                 <thead>
                   <tr className="bg-teal-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
                     <th className="p-2.5 text-center w-10">TT</th>
                     <th className="p-2.5 min-w-[180px]">Chủ đề / Mạch kiến thức</th>
                     
                     {/* Phần I */}
-                    <th className="p-2 text-center bg-teal-100/50 dark:bg-slate-700/60 w-36">
-                      Phần I (Nhiều lựa chọn - 0,25đ)
+                    <th className="p-2 text-center bg-teal-100/50 dark:bg-slate-700/60 min-w-[280px]">
+                      <div className="font-extrabold text-teal-950 dark:text-teal-200">
+                        Phần I (Nhiều lựa chọn - 0,25đ)
+                      </div>
+                      <div className="text-[10px] text-teal-800 dark:text-teal-300 font-semibold mt-0.5">
+                        Mô tả câu hỏi & mức độ nhận thức
+                      </div>
                       <div className="flex justify-around text-[10px] font-normal text-slate-500 dark:text-slate-300 mt-0.5">
                         <span className="w-8 text-center font-bold text-blue-700 dark:text-blue-400">NB</span>
                         <span className="w-8 text-center font-bold text-emerald-700 dark:text-emerald-400">TH</span>
@@ -2065,8 +2759,13 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                     </th>
 
                     {/* Phần III */}
-                    <th className="p-2 text-center bg-amber-100/40 dark:bg-slate-700/30 w-36">
-                      Phần III (Trả lời ngắn - 0,5đ)
+                    <th className="p-2 text-center bg-amber-100/40 dark:bg-slate-700/30 min-w-[280px]">
+                      <div className="font-extrabold text-amber-950 dark:text-amber-200">
+                        Phần III (Trả lời ngắn - 0,5đ)
+                      </div>
+                      <div className="text-[10px] text-amber-800 dark:text-amber-300 font-semibold mt-0.5">
+                        Mô tả câu hỏi & mức độ nhận thức
+                      </div>
                       <div className="flex justify-around text-[10px] font-normal text-slate-500 dark:text-slate-300 mt-0.5">
                         <span className="w-8 text-center font-bold text-emerald-700 dark:text-emerald-400">TH</span>
                         <span className="w-8 text-center font-bold text-amber-700 dark:text-amber-400">VD</span>
@@ -2083,7 +2782,7 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                   {matrixRows.map((row, idx) => (
                     <tr key={row.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
                       <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
-                      <td className="p-2">
+                      <td className="p-2 align-top">
                         <input
                           type="text"
                           value={row.topic}
@@ -2092,36 +2791,137 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                         />
                       </td>
 
-                      {/* Phần I: NB, TH, VD */}
-                      <td className="p-1.5 text-center bg-teal-50/30 dark:bg-slate-800/20">
-                        <div className="flex items-center justify-center gap-1">
-                          <input
-                            type="number"
-                            min="0"
-                            max="12"
-                            value={row.p1_nb}
-                            onChange={e => handleUpdateMatrixCell(row.id, 'p1_nb', parseInt(e.target.value) || 0)}
-                            className="w-8 h-7 text-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-blue-700 dark:text-blue-400 outline-none"
-                            title="Phần I: Nhận biết"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            max="12"
-                            value={row.p1_th}
-                            onChange={e => handleUpdateMatrixCell(row.id, 'p1_th', parseInt(e.target.value) || 0)}
-                            className="w-8 h-7 text-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-emerald-700 dark:text-emerald-400 outline-none"
-                            title="Phần I: Thông hiểu"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            max="12"
-                            value={row.p1_vd}
-                            onChange={e => handleUpdateMatrixCell(row.id, 'p1_vd', parseInt(e.target.value) || 0)}
-                            className="w-8 h-7 text-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-amber-700 dark:text-amber-400 outline-none"
-                            title="Phần I: Vận dụng"
-                          />
+                      {/* Phần I: LỰA CHỌN MỨC ĐỘ & MÔ TẢ TỪNG CÂU */}
+                      <td className="p-2 bg-teal-50/20 dark:bg-slate-800/20 align-top">
+                        <div className="space-y-2">
+                          {/* Thanh điều khiển số lượng & thu gọn/mở rộng */}
+                          <div className="flex items-center justify-between gap-1 bg-teal-50/80 dark:bg-slate-800/80 p-1 rounded-lg border border-teal-200/60 dark:border-slate-700">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max="12"
+                                value={row.p1_nb}
+                                onChange={e => handleUpdateP1Count(row.id, 'NB', parseInt(e.target.value) || 0)}
+                                className="w-7 h-6 text-center text-[10px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-blue-700 dark:text-blue-400 outline-none"
+                                title="Phần I: Số câu Nhận biết"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="12"
+                                value={row.p1_th}
+                                onChange={e => handleUpdateP1Count(row.id, 'TH', parseInt(e.target.value) || 0)}
+                                className="w-7 h-6 text-center text-[10px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-emerald-700 dark:text-emerald-400 outline-none"
+                                title="Phần I: Số câu Thông hiểu"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="12"
+                                value={row.p1_vd}
+                                onChange={e => handleUpdateP1Count(row.id, 'VD', parseInt(e.target.value) || 0)}
+                                className="w-7 h-6 text-center text-[10px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-amber-700 dark:text-amber-400 outline-none"
+                                title="Phần I: Số câu Vận dụng"
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandP1Row(row.id)}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-0.5 transition ${
+                                expandedP1Rows[row.id]
+                                  ? 'bg-teal-600 text-white shadow-2xs'
+                                  : 'bg-white dark:bg-slate-700 text-teal-800 dark:text-teal-200 hover:bg-teal-100 border border-teal-200 dark:border-teal-700'
+                              }`}
+                              title={expandedP1Rows[row.id] ? "Thu gọn mô tả" : "Mở rộng mô tả câu hỏi"}
+                            >
+                              <Edit3 size={10} />
+                              <span>{getP1Total(row)} câu</span>
+                              {expandedP1Rows[row.id] ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                            </button>
+                          </div>
+
+                          {/* Danh sách các câu hỏi Phần I kèm mô tả */}
+                          {expandedP1Rows[row.id] && (
+                            <div className="space-y-1.5">
+                              {getRowP1Questions(row).map((q, qIndex) => {
+                                const qNumber = getOverallP1Index(row.id, qIndex);
+                                return (
+                                  <div
+                                    key={q.id || qIndex}
+                                    className="p-1.5 bg-white dark:bg-slate-800 rounded-lg border border-teal-200 dark:border-teal-800/80 shadow-2xs space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="w-4 h-4 rounded-full bg-teal-600 text-white flex items-center justify-center text-[9px] font-black shrink-0">
+                                          {qNumber}
+                                        </span>
+                                        <span className="text-[10px] font-extrabold text-slate-800 dark:text-slate-100">
+                                          Câu {qNumber}
+                                        </span>
+                                        <select
+                                          value={q.level}
+                                          onChange={e => handleUpdateP1QuestionLevel(row.id, qIndex, e.target.value as CognitiveLevel)}
+                                          className={`text-[9px] font-black py-0.2 px-1 text-center rounded border outline-none cursor-pointer ${getLevelBadgeClass(q.level)}`}
+                                          title="Mức độ nhận thức"
+                                        >
+                                          <option value="NB">NB</option>
+                                          <option value="TH">TH</option>
+                                          <option value="VD">VD</option>
+                                          <option value="VDC">VDC</option>
+                                        </select>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        <select
+                                          value={q.presetId || ''}
+                                          onChange={e => {
+                                            if (e.target.value) handleApplyP1Preset(row.id, qIndex, e.target.value);
+                                          }}
+                                          className="text-[9px] bg-slate-50 dark:bg-slate-900 border border-teal-200 dark:border-teal-700 rounded px-1 py-0.5 text-slate-700 dark:text-slate-200 outline-none max-w-[125px] font-medium truncate"
+                                          title="Chọn gợi ý dạng bài mẫu BGDĐT"
+                                        >
+                                          <option value="">-- Mẫu gợi ý --</option>
+                                          {PART1_PRESETS.filter(p => p.grade === (grade || 12) || p.grade === 'both').map(preset => (
+                                            <option key={preset.id} value={preset.id}>
+                                              {preset.name}
+                                            </option>
+                                          ))}
+                                        </select>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveP1Question(row.id, qIndex)}
+                                          className="p-0.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                          title={`Xóa Câu ${qNumber}`}
+                                        >
+                                          <Trash2 size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Ô mô tả câu hỏi */}
+                                    <input
+                                      type="text"
+                                      value={q.prompt || ''}
+                                      onChange={e => handleUpdateP1QuestionPrompt(row.id, qIndex, e.target.value)}
+                                      placeholder="Mô tả câu hỏi để AI sinh đề (VD: Cho BBT tìm khoảng đồng biến...)"
+                                      className="w-full px-2 py-0.5 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:border-teal-500 font-medium placeholder:text-slate-400"
+                                    />
+                                  </div>
+                                );
+                              })}
+
+                              <button
+                                type="button"
+                                onClick={() => handleAddP1Question(row.id)}
+                                className="w-full py-0.5 px-1 bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800/80 rounded-md text-[9px] font-bold flex items-center justify-center gap-1 transition"
+                              >
+                                <Plus size={10} /> Thêm câu Phần I
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -2395,36 +3195,137 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                         </div>
                       </td>
 
-                      {/* Phần III: TH, VD, VDC */}
-                      <td className="p-1.5 text-center bg-amber-50/20 dark:bg-slate-800/10">
-                        <div className="flex items-center justify-center gap-1">
-                          <input
-                            type="number"
-                            min="0"
-                            max="6"
-                            value={row.p3_th}
-                            onChange={e => handleUpdateMatrixCell(row.id, 'p3_th', parseInt(e.target.value) || 0)}
-                            className="w-8 h-7 text-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-emerald-700 dark:text-emerald-400 outline-none"
-                            title="Phần III: Thông hiểu"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            max="6"
-                            value={row.p3_vd}
-                            onChange={e => handleUpdateMatrixCell(row.id, 'p3_vd', parseInt(e.target.value) || 0)}
-                            className="w-8 h-7 text-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-amber-700 dark:text-amber-400 outline-none"
-                            title="Phần III: Vận dụng"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            max="6"
-                            value={row.p3_vdc}
-                            onChange={e => handleUpdateMatrixCell(row.id, 'p3_vdc', parseInt(e.target.value) || 0)}
-                            className="w-8 h-7 text-center rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-purple-700 dark:text-purple-400 outline-none"
-                            title="Phần III: Vận dụng cao"
-                          />
+                      {/* Phần III: LỰA CHỌN MỨC ĐỘ & MÔ TẢ TỪNG CÂU */}
+                      <td className="p-2 bg-amber-50/20 dark:bg-slate-800/10 align-top">
+                        <div className="space-y-2">
+                          {/* Thanh điều khiển số lượng & thu gọn/mở rộng */}
+                          <div className="flex items-center justify-between gap-1 bg-amber-50/80 dark:bg-slate-800/80 p-1 rounded-lg border border-amber-200/60 dark:border-slate-700">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max="6"
+                                value={row.p3_th}
+                                onChange={e => handleUpdateP3Count(row.id, 'TH', parseInt(e.target.value) || 0)}
+                                className="w-7 h-6 text-center text-[10px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-emerald-700 dark:text-emerald-400 outline-none"
+                                title="Phần III: Số câu Thông hiểu"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="6"
+                                value={row.p3_vd}
+                                onChange={e => handleUpdateP3Count(row.id, 'VD', parseInt(e.target.value) || 0)}
+                                className="w-7 h-6 text-center text-[10px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-amber-700 dark:text-amber-400 outline-none"
+                                title="Phần III: Số câu Vận dụng"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="6"
+                                value={row.p3_vdc}
+                                onChange={e => handleUpdateP3Count(row.id, 'VDC', parseInt(e.target.value) || 0)}
+                                className="w-7 h-6 text-center text-[10px] rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-purple-700 dark:text-purple-400 outline-none"
+                                title="Phần III: Số câu Vận dụng cao"
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => toggleExpandP3Row(row.id)}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-0.5 transition ${
+                                expandedP3Rows[row.id]
+                                  ? 'bg-amber-600 text-white shadow-2xs'
+                                  : 'bg-white dark:bg-slate-700 text-amber-800 dark:text-amber-200 hover:bg-amber-100 border border-amber-200 dark:border-amber-700'
+                              }`}
+                              title={expandedP3Rows[row.id] ? "Thu gọn mô tả" : "Mở rộng mô tả câu hỏi"}
+                            >
+                              <Edit3 size={10} />
+                              <span>{getP3Total(row)} câu</span>
+                              {expandedP3Rows[row.id] ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                            </button>
+                          </div>
+
+                          {/* Danh sách các câu hỏi Phần III kèm mô tả */}
+                          {expandedP3Rows[row.id] && (
+                            <div className="space-y-1.5">
+                              {getRowP3Questions(row).map((q, qIndex) => {
+                                const qNumber = getOverallP3Index(row.id, qIndex);
+                                return (
+                                  <div
+                                    key={q.id || qIndex}
+                                    className="p-1.5 bg-white dark:bg-slate-800 rounded-lg border border-amber-200 dark:border-amber-800/80 shadow-2xs space-y-1"
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <div className="flex items-center gap-1">
+                                        <span className="w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center text-[9px] font-black shrink-0">
+                                          {qNumber}
+                                        </span>
+                                        <span className="text-[10px] font-extrabold text-slate-800 dark:text-slate-100">
+                                          Câu {qNumber}
+                                        </span>
+                                        <select
+                                          value={q.level}
+                                          onChange={e => handleUpdateP3QuestionLevel(row.id, qIndex, e.target.value as CognitiveLevel)}
+                                          className={`text-[9px] font-black py-0.2 px-1 text-center rounded border outline-none cursor-pointer ${getLevelBadgeClass(q.level)}`}
+                                          title="Mức độ nhận thức"
+                                        >
+                                          <option value="NB">NB</option>
+                                          <option value="TH">TH</option>
+                                          <option value="VD">VD</option>
+                                          <option value="VDC">VDC</option>
+                                        </select>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        <select
+                                          value={q.presetId || ''}
+                                          onChange={e => {
+                                            if (e.target.value) handleApplyP3Preset(row.id, qIndex, e.target.value);
+                                          }}
+                                          className="text-[9px] bg-slate-50 dark:bg-slate-900 border border-amber-200 dark:border-amber-700 rounded px-1 py-0.5 text-slate-700 dark:text-slate-200 outline-none max-w-[125px] font-medium truncate"
+                                          title="Chọn gợi ý dạng bài mẫu trả lời ngắn"
+                                        >
+                                          <option value="">-- Mẫu gợi ý --</option>
+                                          {PART3_PRESETS.filter(p => p.grade === (grade || 12) || p.grade === 'both').map(preset => (
+                                            <option key={preset.id} value={preset.id}>
+                                              {preset.name}
+                                            </option>
+                                          ))}
+                                        </select>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveP3Question(row.id, qIndex)}
+                                          className="p-0.5 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                          title={`Xóa Câu ${qNumber}`}
+                                        >
+                                          <Trash2 size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Ô mô tả câu hỏi */}
+                                    <input
+                                      type="text"
+                                      value={q.prompt || ''}
+                                      onChange={e => handleUpdateP3QuestionPrompt(row.id, qIndex, e.target.value)}
+                                      placeholder="Mô tả câu hỏi để AI sinh đề (VD: Tính khoảng cách giữa 2 điểm cực trị...)"
+                                      className="w-full px-2 py-0.5 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:border-amber-500 font-medium placeholder:text-slate-400"
+                                    />
+                                  </div>
+                                );
+                              })}
+
+                              <button
+                                type="button"
+                                onClick={() => handleAddP3Question(row.id)}
+                                className="w-full py-0.5 px-1 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800/80 rounded-md text-[9px] font-bold flex items-center justify-center gap-1 transition"
+                              >
+                                <Plus size={10} /> Thêm câu Phần III
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -3208,33 +4109,66 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
               )}
             </div>
 
-            {/* THANH CHUYỂN ĐỔI CHẾ ĐỘ XEM ĐỀ THI */}
-            <div className="flex items-center justify-between">
-              <div className="flex bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            {/* THANH CHUYỂN ĐỔI CHẾ ĐỘ XEM ĐỀ THI & MỞ BỘ CÔNG CỤ VẼ ẢNH 300 DPI */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
+                  <button
+                    onClick={() => setViewMode('source')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                      viewMode === 'source'
+                        ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Edit3 size={14} /> SOURCE CODE
+                  </button>
+                  <button
+                    onClick={() => setViewMode('preview')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                      viewMode === 'preview'
+                        ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Eye size={14} /> XEM TRƯỚC
+                  </button>
+                </div>
+
+                {/* 3 NÚT MỞ BỘ CÔNG CỤ VẼ ẢNH 300 DPI TRỰC TIẾP */}
                 <button
-                  onClick={() => setViewMode('source')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition ${
-                    viewMode === 'source'
-                      ? 'bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                  type="button"
+                  onClick={() => handleOpenDiagramModal('graph')}
+                  className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800 hover:bg-teal-100 rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                  title="Mở công cụ vẽ đồ thị hàm số Oxy độ nét cao 300 DPI"
                 >
-                  <Edit3 size={14} /> SOURCE CODE (HTML / MARKDOWN)
+                  <TrendingUp size={13} className="text-teal-600" />
+                  <span>Vẽ Đồ Thị Oxy</span>
                 </button>
+
                 <button
-                  onClick={() => setViewMode('preview')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition ${
-                    viewMode === 'preview'
-                      ? 'bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                  type="button"
+                  onClick={() => handleOpenDiagramModal('bbt')}
+                  className="px-3 py-1.5 bg-purple-50 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                  title="Mở công cụ vẽ bảng biến thiên tự động độ nét cao 300 DPI"
                 >
-                  <Eye size={14} /> XEM TRƯỚC (CHUẨN IN ẤN & TOÁN HỌC)
+                  <TableIcon size={13} className="text-purple-600" />
+                  <span>Vẽ Bảng Biến Thiên</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenDiagramModal('geometry')}
+                  className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                  title="Mở thước kẻ và com-pa GSP vẽ hình học không gian 3D"
+                >
+                  <Box size={13} className="text-amber-600" />
+                  <span>Vẽ Hình 3D (GSP)</span>
                 </button>
               </div>
 
-              <div className="text-xs text-slate-500 font-medium hidden sm:block">
-                Hỗ trợ công thức $LaTeX$, bảng biến thiên & đồ thị nhúng trực tiếp chuẩn nét khi tải Word (.docx)
+              <div className="text-xs text-slate-500 font-medium hidden md:block">
+                Tối ưu công thức Toán Office Math & nhúng hình vẽ 300 DPI khi tải Word (.docx)
               </div>
             </div>
 
@@ -3281,6 +4215,17 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
         )}
 
       </div>
+
+      {/* MODAL TÍCH HỢP 3 BỘ CÔNG CỤ VẼ HÌNH 300 DPI CHUẨN IN ẤN VÀ WORD */}
+      <IntegratedDiagramModal
+        isOpen={diagramModalOpen}
+        onClose={() => setDiagramModalOpen(false)}
+        onInsertImage={handleInsertDiagramToExam}
+        initialTab={diagramInitialTab}
+        targetQuestionNumber={targetQuestionForDiagram}
+        apiKey={apiKey}
+        model={model}
+      />
 
     </div>
   );

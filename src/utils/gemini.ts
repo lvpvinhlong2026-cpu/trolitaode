@@ -13,9 +13,9 @@ async function callGeminiDirect(prompt: string, modelName: string, apiKey: strin
   
   const parts: any[] = [{ text: prompt }];
   if (imageBase64) {
-    const match = imageBase64.match(/^data:(image\/[a-zA-Z]*);base64,/);
+    const match = imageBase64.match(/^data:([a-zA-Z0-9\/\-+.]+);base64,/);
     const mimeType = match ? match[1] : "image/jpeg";
-    const data = imageBase64.replace(/^data:image\/[a-zA-Z]*;base64,/, "");
+    const data = imageBase64.replace(/^data:[a-zA-Z0-9\/\-+.]+;base64,/, "");
     parts.push({ inlineData: { mimeType, data } });
   }
 

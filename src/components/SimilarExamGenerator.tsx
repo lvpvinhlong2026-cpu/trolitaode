@@ -1,9 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Loader2, Download, AlertCircle, CheckCircle2, Edit3, Settings, Copy, Play } from 'lucide-react';
+import { Upload, FileText, Loader2, Download, AlertCircle, CheckCircle2, Edit3, Settings, Copy, Play, TrendingUp, Table as TableIcon, Box, Sparkles } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import JSZip from 'jszip';
 import EditorToolbar from './EditorToolbar';
 import MarkdownEditor from './MarkdownEditor';
+import { buildExamDocxBlob } from '../utils/docxExamBuilder';
+import { IntegratedDiagramModal, DiagramToolTab } from './IntegratedDiagramModal';
 
 interface Props {
   apiKey: string;
@@ -25,6 +27,22 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
   const [noParameterM, setNoParameterM] = useState<boolean>(false);
   const [examCount, setExamCount] = useState<number>(1);
   const [contextSuggestion, setContextSuggestion] = useState<string>('');
+  
+  // State điều khiển Modal tích hợp 3 bộ công cụ vẽ ảnh 300 DPI
+  const [diagramModalOpen, setDiagramModalOpen] = useState<boolean>(false);
+  const [diagramInitialTab, setDiagramInitialTab] = useState<DiagramToolTab>('graph');
+
+  const handleOpenDiagramModal = (tab: DiagramToolTab) => {
+    setDiagramInitialTab(tab);
+    setDiagramModalOpen(true);
+  };
+
+  const handleInsertDiagramToResult = (dataUrl: string) => {
+    const imgMarkdown = `\n\n![Hình vẽ minh họa](${dataUrl})\n\n`;
+    setResultText(prev => prev + imgMarkdown);
+    setSuccess('Đã chèn ảnh đồ họa 300 DPI vào đề thi!');
+    setTimeout(() => setSuccess(''), 3000);
+  };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,35 +94,15 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
   };
 
   const generateDocx = async (markdownText: string, originalFilename: string) => {
-    setStatus('Đang tạo file Word...');
+    setStatus('Đang tạo file Word chuẩn công thức Office Math & nhúng ảnh 300 DPI...');
     setProgress(90);
     
     try {
-      const lines = markdownText.split('\n');
-      
-      const paragraphs = lines.map(line => {
-        const parts = line.split(/(\*\*.*?\*\*)/g);
-        const textRuns = parts.map(part => {
-          if (part.startsWith('**') && part.endsWith('**')) {
-            return new TextRun({ text: part.slice(2, -2), bold: true, font: "Times New Roman", size: 28 });
-          }
-          return new TextRun({ text: part, font: "Times New Roman", size: 28 });
-        });
-
-        return new Paragraph({
-          children: textRuns,
-          spacing: { after: 200 }
-        });
+      const buffer = await buildExamDocxBlob(markdownText, {
+        examTitle: 'ĐỀ THI TƯƠNG TỰ ĐÃ NHÂN BẢN',
+        examCode: '102',
+        duration: '90 phút'
       });
-
-      const doc = new Document({
-        sections: [{
-          properties: {},
-          children: paragraphs
-        }]
-      });
-
-      const buffer = await Packer.toBlob(doc);
       const url = window.URL.createObjectURL(buffer);
       const link = document.createElement('a');
       link.href = url;
@@ -118,7 +116,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      setSuccess('Lưu đề thi Word thành công! Đã tự động tải file xuống.');
+      setSuccess('Lưu đề thi Word (.docx) thành công! Công thức Toán đẹp rõ chuẩn Office Math và nhúng ảnh sắc nét.');
       setProgress(100);
     } catch (err: any) {
       console.error('Error generating docx:', err);
@@ -427,7 +425,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
             <input 
               type="file" 
               multiple
-              accept="application/pdf,.docx,image/png,image/jpeg,image/jpg" 
+              accept="application/pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp,image/bmp" 
               className="hidden" 
               ref={fileInputRef}
               onChange={handleFileChange}
@@ -439,7 +437,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
                   <Upload size={28} />
                 </div>
                 <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200">Kéo thả các file đề gốc vào đây</h3>
-                <p className="text-slate-400 text-sm mt-1">Hỗ trợ tải lên nhiều file ảnh cùng lúc</p>
+                <p className="text-slate-400 text-sm mt-1">Hỗ trợ 5 định dạng: PDF, Word (.docx, .doc), Ảnh và Bản scan</p>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center w-full">
@@ -595,14 +593,38 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
       {/* LIVE PREVIEW EDITOR */}
       {resultText && (
         <div className="mt-8 border border-slate-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm bg-white dark:bg-slate-800">
-          <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+          <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-wrap justify-between items-center gap-2">
             <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <Edit3 size={18} className="text-purple-500" />
-              Trình soạn thảo (Live Editor)
+              Trình soạn thảo đề thi nhân bản
             </h3>
-            <span className="text-xs font-medium px-2.5 py-1 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 rounded-lg">
-              Sẵn sàng xuất file
-            </span>
+            
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenDiagramModal('graph')}
+                className="px-2.5 py-1 bg-teal-50 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border border-teal-200 dark:border-teal-800 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-teal-100 cursor-pointer"
+              >
+                <TrendingUp size={13} className="text-teal-600" /> Vẽ Đồ Thị
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenDiagramModal('bbt')}
+                className="px-2.5 py-1 bg-purple-50 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-purple-100 cursor-pointer"
+              >
+                <TableIcon size={13} className="text-purple-600" /> Vẽ Bảng Biến Thiên
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenDiagramModal('geometry')}
+                className="px-2.5 py-1 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-amber-100 cursor-pointer"
+              >
+                <Box size={13} className="text-amber-600" /> Vẽ Hình 3D (GSP)
+              </button>
+              <span className="text-xs font-medium px-2.5 py-1 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 rounded-lg">
+                Office Math & 300 DPI
+              </span>
+            </div>
           </div>
           
           <div className="p-0 bg-white dark:bg-slate-800 flex flex-col">
@@ -641,6 +663,16 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
           </div>
         </div>
       )}
+
+      {/* MODAL BỘ 3 CÔNG CỤ VẼ HÌNH 300 DPI CHUẨN IN ẤN VÀ WORD */}
+      <IntegratedDiagramModal
+        isOpen={diagramModalOpen}
+        onClose={() => setDiagramModalOpen(false)}
+        onInsertImage={handleInsertDiagramToResult}
+        initialTab={diagramInitialTab}
+        apiKey={apiKey}
+        model={model}
+      />
     </div>
   );
 }

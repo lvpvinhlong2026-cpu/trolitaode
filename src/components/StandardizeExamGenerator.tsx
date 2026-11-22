@@ -4,6 +4,7 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 import JSZip from 'jszip';
 import EditorToolbar from './EditorToolbar';
 import MarkdownEditor from './MarkdownEditor';
+import { buildExamDocxBlob } from '../utils/docxExamBuilder';
 
 interface Props {
   apiKey: string;
@@ -87,41 +88,21 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
   };
 
   const generateDocx = async (markdownText: string, originalFilename: string) => {
-    setStatus('Đang tạo file Word...');
+    setStatus('Đang tạo file Word chuẩn công thức Office Math & nhúng ảnh 300 DPI...');
     setProgress(90);
     
     try {
-      const lines = markdownText.split('\n');
-      
-      const paragraphs = lines.map(line => {
-        const parts = line.split(/(\*\*.*?\*\*)/g);
-        const textRuns = parts.map(part => {
-          if (part.startsWith('**') && part.endsWith('**')) {
-            return new TextRun({ text: part.slice(2, -2), bold: true, font: "Times New Roman", size: 28 });
-          }
-          return new TextRun({ text: part, font: "Times New Roman", size: 28 });
-        });
-
-        return new Paragraph({
-          children: textRuns,
-          spacing: { after: 200 }
-        });
+      const buffer = await buildExamDocxBlob(markdownText, {
+        examTitle: 'ĐỀ KIỂM TRA ĐÃ CHUẨN HÓA',
+        examCode: '101',
+        duration: '90 phút'
       });
-
-      const doc = new Document({
-        sections: [{
-          properties: {},
-          children: paragraphs
-        }]
-      });
-
-      const buffer = await Packer.toBlob(doc);
       const url = window.URL.createObjectURL(buffer);
       const link = document.createElement('a');
       link.href = url;
       
       let baseName = originalFilename.replace(/\.(pdf|docx|png|jpg|jpeg)$/i, '');
-      if (files.length > 1) baseName = 'De_thi_tuong_tu';
+      if (files.length > 1) baseName = 'De_thi_chuan_hoa';
       link.download = `${baseName}_De_Moi.docx`;
       
       document.body.appendChild(link);
@@ -129,7 +110,7 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      setSuccess('Lưu đề thi Word thành công! Đã tự động tải file xuống.');
+      setSuccess('Lưu đề thi Word (.docx) thành công! Công thức Toán đẹp rõ chuẩn Office Math và nhúng ảnh sắc nét.');
       setProgress(100);
     } catch (err: any) {
       console.error('Error generating docx:', err);
@@ -414,7 +395,7 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
             <input 
               type="file" 
               multiple
-              accept="application/pdf,.docx,image/png,image/jpeg,image/jpg" 
+              accept="application/pdf,.doc,.docx,image/png,image/jpeg,image/jpg,image/webp,image/bmp" 
               className="hidden" 
               ref={fileInputRef}
               onChange={handleFileChange}
@@ -426,7 +407,7 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
                   <Upload size={28} />
                 </div>
                 <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200">Kéo thả các file đề gốc vào đây</h3>
-                <p className="text-slate-400 text-sm mt-1">Hỗ trợ tải lên nhiều file ảnh cùng lúc</p>
+                <p className="text-slate-400 text-sm mt-1">Hỗ trợ 5 định dạng: PDF, Word (.docx, .doc), Ảnh và Bản scan</p>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center w-full">

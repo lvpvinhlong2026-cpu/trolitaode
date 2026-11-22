@@ -7,6 +7,8 @@
  * 4. Hàm phân thức bậc hai / bậc nhất: y = (ax^2 + bx + c) / (dx + e)
  */
 
+export type MathStrokeChoice = 'thin' | 'standard' | 'bold';
+
 export interface BBTPoint {
   xLabel: string;
   yPrimeSymbol: string; // '0', '||', or ''
@@ -899,7 +901,7 @@ export function drawMathText(
   const isBold = options?.isBold ?? true;
   const withHalo = options?.withHalo ?? true; // Mặc định luôn có Halo trắng bảo vệ không bị đường cong hay trục che
   const haloColor = options?.haloColor ?? '#FFFFFF';
-  const haloWidth = options?.haloWidth ?? 3.5;
+  const haloWidth = options?.haloWidth ?? (isBold ? 3.5 : 2.0);
 
   ctx.save();
 
@@ -914,7 +916,7 @@ export function drawMathText(
 
     // Cỡ chữ tử và mẫu to rõ, cân đối
     const fracFontSize = Math.max(14, Math.round(fontSize * 0.8));
-    const fracFont = `${isBold ? 'bold ' : ''}${isItalic ? 'italic ' : ''}${fracFontSize}px ${fontFamily}`;
+    const fracFont = `${isItalic ? 'italic ' : ''}${isBold ? 'bold ' : 'normal '}${fracFontSize}px ${fontFamily}`;
 
     ctx.font = fracFont;
     const numWidth = ctx.measureText(num).width;
@@ -922,7 +924,7 @@ export function drawMathText(
     const barWidth = Math.max(numWidth, denWidth) + 8;
 
     // Dấu trừ to rõ phía trước phân số
-    const minusWidth = isNegative ? Math.max(12, Math.round(fontSize * 0.55)) : 0;
+    const minusWidth = isNegative ? Math.max(12, Math.round(fontSize * (isBold ? 0.55 : 0.48))) : 0;
     const minusGap = isNegative ? 5 : 0;
     const totalWidth = minusWidth + minusGap + barWidth;
 
@@ -989,7 +991,7 @@ export function drawMathText(
 
     // Vẽ dấu trừ to rõ (dạng nét vẽ sắc nét, dày dặn)
     if (isNegative) {
-      ctx.lineWidth = Math.max(2.4, Math.round(fontSize * 0.11));
+      ctx.lineWidth = isBold ? Math.max(2.4, Math.round(fontSize * 0.11)) : Math.max(1.5, Math.round(fontSize * 0.075));
       ctx.lineCap = 'round';
       ctx.strokeStyle = color;
       ctx.beginPath();
@@ -999,7 +1001,7 @@ export function drawMathText(
     }
 
     // Vẽ đường gạch ngang phân số sắc nét
-    ctx.lineWidth = Math.max(1.6, Math.round(fontSize * 0.08));
+    ctx.lineWidth = isBold ? Math.max(1.8, Math.round(fontSize * 0.08)) : Math.max(1.2, Math.round(fontSize * 0.055));
     ctx.lineCap = 'butt';
     ctx.strokeStyle = color;
     ctx.beginPath();
@@ -1017,13 +1019,21 @@ export function drawMathText(
     // Vẽ mẫu số phía dưới gạch ngang
     ctx.fillText(den, barCenterX, y + denOffset);
 
+    // Tăng cường nét chữ đậm (solid micro-stroke) nếu chọn Chữ đậm
+    if (isBold) {
+      ctx.lineWidth = Math.max(0.5, Math.round(fontSize * 0.035));
+      ctx.strokeStyle = color;
+      ctx.strokeText(num, barCenterX, y - numOffset);
+      ctx.strokeText(den, barCenterX, y + denOffset);
+    }
+
     ctx.restore();
     return;
   }
 
   // Chữ / số bình thường
   const mathFormatted = trimmed.replace(/-/g, '−');
-  ctx.font = `${isBold ? 'bold ' : ''}${isItalic ? 'italic ' : ''}${fontSize}px ${fontFamily}`;
+  ctx.font = `${isItalic ? 'italic ' : ''}${isBold ? 'bold ' : 'normal '}${fontSize}px ${fontFamily}`;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
 
@@ -1037,9 +1047,18 @@ export function drawMathText(
     ctx.strokeText(mathFormatted, x, y);
   }
 
-  // 2. Chữ chính thức màu đen đậm
+  // 2. Chữ chính thức màu đen
   ctx.fillStyle = color;
   ctx.fillText(mathFormatted, x, y);
+
+  // 3. Tăng cường nét chữ đậm rõ rệt (solid micro-stroke) nếu chọn Chữ đậm
+  if (isBold) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.5, Math.round(fontSize * 0.035));
+    ctx.lineJoin = 'round';
+    ctx.strokeText(mathFormatted, x, y);
+  }
+
   ctx.restore();
 }
 
@@ -1073,13 +1092,21 @@ export function renderBBTToCanvas(
   data: BBTData,
   canvas: HTMLCanvasElement,
   dpiScale = 2.4,
-  options?: { fontSizeScale?: number; fontFamily?: string }
+  options?: { 
+    fontSizeScale?: number; 
+    fontFamily?: string;
+    strokeChoice?: MathStrokeChoice;
+    isBold?: boolean;
+  }
 ): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   const fontScale = options?.fontSizeScale ?? 1.0;
   const fontFamily = options?.fontFamily ?? '"Times New Roman", "STIX Two Text", "Cambria Math", serif';
+  const strokeChoice = options?.strokeChoice ?? 'standard';
+  const isBold = options?.isBold ?? true;
+  const strokeMultiplier = strokeChoice === 'thin' ? 0.75 : strokeChoice === 'bold' ? 1.4 : 1.0;
   const numPoints = data.points.length;
   // Bảng biến thiên có kích thước vừa phải, gọn gàng chuẩn Word
   const logicalWidth = Math.min(680, Math.max(540, numPoints <= 4 ? 560 : numPoints === 5 ? 620 : 660));
@@ -1118,12 +1145,12 @@ export function renderBBTToCanvas(
 
   // 1. Viền ngoài hình chữ nhật bao quanh
   ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 1.8 * strokeMultiplier;
   ctx.strokeRect(tableX, tableY, tableW, tableH);
 
   // 2. Kẻ đường ngang ngăn cách các hàng
   ctx.beginPath();
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.4 * strokeMultiplier;
   ctx.moveTo(tableX, lineY1);
   ctx.lineTo(tableX + tableW, lineY1);
   ctx.moveTo(tableX, lineY2);
@@ -1139,7 +1166,7 @@ export function renderBBTToCanvas(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const headerFontSz = Math.round(25 * fontScale);
-  ctx.font = `italic bold ${headerFontSz}px ${fontFamily}`;
+  ctx.font = `italic ${isBold ? 'bold ' : 'normal '}${headerFontSz}px ${fontFamily}`;
   ctx.fillText('x', tableX + headerColWidth / 2, tableY + row1H / 2);
   ctx.fillText("y'", tableX + headerColWidth / 2, lineY1 + row2H / 2);
   ctx.fillText('y', tableX + headerColWidth / 2, lineY2 + row3H / 2);
@@ -1172,7 +1199,7 @@ export function renderBBTToCanvas(
     drawMathText(ctx, pt.xLabel, px, tableY + row1H / 2, {
       fontSize: xFontSz,
       isItalic: isInf,
-      isBold: true,
+      isBold,
       align: 'center',
       fontFamily
     });
@@ -1184,7 +1211,7 @@ export function renderBBTToCanvas(
       ctx.fillRect(px - barOffset - 0.5, lineY1 + 1, barOffset * 2 + 1, (tableY + tableH) - lineY1 - 2);
 
       ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.4 * strokeMultiplier;
       ctx.beginPath();
       ctx.moveTo(px - barOffset, lineY1);
       ctx.lineTo(px - barOffset, tableY + tableH);
@@ -1194,7 +1221,7 @@ export function renderBBTToCanvas(
     } else if (pt.yPrimeSymbol === '0') {
       ctx.fillStyle = '#000000';
       const zeroFontSz = Math.round(23 * fontScale);
-      ctx.font = `bold ${zeroFontSz}px ${fontFamily}`;
+      ctx.font = `${isBold ? 'bold ' : 'normal '}${zeroFontSz}px ${fontFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('0', px, lineY1 + row2H / 2);
@@ -1209,7 +1236,7 @@ export function renderBBTToCanvas(
       const midY = lineY1 + row2H / 2;
       if (inter.sign === '-') {
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3.2;
+        ctx.lineWidth = (isBold ? 3.2 : 2.0) * strokeMultiplier;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(midX - 9, midY);
@@ -1218,7 +1245,7 @@ export function renderBBTToCanvas(
       } else {
         ctx.fillStyle = '#000000';
         const plusFontSz = Math.round(28 * fontScale);
-        ctx.font = `bold ${plusFontSz}px ${fontFamily}`;
+        ctx.font = `${isBold ? 'bold ' : 'normal '}${plusFontSz}px ${fontFamily}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('+', midX, midY + 1);
@@ -1267,37 +1294,53 @@ export function renderBBTToCanvas(
     const p2 = yRenderList[i + 1];
 
     if (p1.isDoubleBar) {
-      const startX = p1.x + 36;
-      const startY = p1.rightLimit === '+∞' ? yTopY : p1.rightLimit === '-∞' ? yBottomY : yMidY;
+      const aX1 = p1.x + 32;
+      const aY1 = p1.rightLimit === '+∞' ? yTopY : p1.rightLimit === '-∞' ? yBottomY : yMidY;
       const hw2 = getTextHalfWidth(ctx, p2.val, fontFamily);
-      const endX = p2.x - hw2;
-      const endY = p2.y;
-      if (endX > startX + 10) {
+      const R2 = hw2 + 8;
+      const aX2 = p2.x;
+      const aY2 = p2.y;
+      const dx = aX2 - aX1;
+      const dy = aY2 - aY1;
+      if (dx > R2 + 10) {
+        const m = dy / dx;
+        const startX = aX1;
+        const startY = aY1;
+        const endX = aX2 - R2;
+        const endY = aY2 - m * R2;
         drawArrow(ctx, startX, startY, endX, endY);
       }
     } else if (p2.isDoubleBar) {
       const hw1 = getTextHalfWidth(ctx, p1.val, fontFamily);
-      const startX = p1.x + hw1;
-      const startY = p1.y;
-      const endX = p2.x - 36;
-      const endY = p2.leftLimit === '+∞' ? yTopY : p2.leftLimit === '-∞' ? yBottomY : yMidY;
-      if (endX > startX + 10) {
+      const R1 = hw1 + 8;
+      const aX1 = p1.x;
+      const aY1 = p1.y;
+      const aX2 = p2.x - 32;
+      const aY2 = p2.leftLimit === '+∞' ? yTopY : p2.leftLimit === '-∞' ? yBottomY : yMidY;
+      const dx = aX2 - aX1;
+      const dy = aY2 - aY1;
+      if (dx > R1 + 10) {
+        const m = dy / dx;
+        const startX = aX1 + R1;
+        const startY = aY1 + m * R1;
+        const endX = aX2;
+        const endY = aY2;
         drawArrow(ctx, startX, startY, endX, endY);
       }
     } else {
+      const hw1 = getTextHalfWidth(ctx, p1.val, fontFamily);
+      const hw2 = getTextHalfWidth(ctx, p2.val, fontFamily);
+      const R1 = hw1 + 8;
+      const R2 = hw2 + 8;
       const dx = p2.x - p1.x;
       const dy = p2.y - p1.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 35) {
-        const hw1 = getTextHalfWidth(ctx, p1.val, fontFamily);
-        const hw2 = getTextHalfWidth(ctx, p2.val, fontFamily);
-        const startX = p1.x + hw1;
-        const startY = p1.y + (dy / dist) * Math.min(14, hw1 * 0.5);
-        const endX = p2.x - hw2;
-        const endY = p2.y - (dy / dist) * Math.min(14, hw2 * 0.5);
-        if (endX > startX + 10) {
-          drawArrow(ctx, startX, startY, endX, endY);
-        }
+      if (dx > R1 + R2 + 10) {
+        const m = dy / dx;
+        const startX = p1.x + R1;
+        const startY = p1.y + m * R1;
+        const endX = p2.x - R2;
+        const endY = p2.y - m * R2;
+        drawArrow(ctx, startX, startY, endX, endY);
       }
     }
   }
@@ -1312,7 +1355,7 @@ export function renderBBTToCanvas(
         drawMathText(ctx, pt.leftLimit, pt.x - 10, leftY, {
           fontSize: limFontSz,
           isItalic: true,
-          isBold: true,
+          isBold,
           align: 'right',
           fontFamily
         });
@@ -1323,7 +1366,7 @@ export function renderBBTToCanvas(
         drawMathText(ctx, pt.rightLimit, pt.x + 10, rightY, {
           fontSize: limFontSz,
           isItalic: true,
-          isBold: true,
+          isBold,
           align: 'left',
           fontFamily
         });
@@ -1334,7 +1377,7 @@ export function renderBBTToCanvas(
       drawMathText(ctx, pt.val, pt.x, pt.y, {
         fontSize: valFontSz,
         isItalic: isInf,
-        isBold: true,
+        isBold,
         align: 'center',
         fontFamily,
         useRectHalo: true
