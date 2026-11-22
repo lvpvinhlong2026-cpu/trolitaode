@@ -21,7 +21,8 @@ import {
   Upload,
   Sun,
   Moon,
-  GraduationCap
+  GraduationCap,
+  ShieldCheck
 } from 'lucide-react';
 import { ActiveTabType } from '../App';
 
@@ -83,6 +84,7 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
       case 'matrix_full':
       case 'cv7991':
       case 'similar':
+      case 'critique':
         return 'khao_thi';
       case 'function_graph':
       case 'geometry':
@@ -140,6 +142,17 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
             icon: <RefreshCw size={19} className="text-blue-600 dark:text-blue-400" />
           }
         ]
+      },
+      {
+        groupTitle: 'Kiểm Định & Đánh Giá',
+        tools: [
+          {
+            id: 'critique',
+            label: 'Phản Biện Đề Thi',
+            icon: <ShieldCheck size={19} className="text-amber-600 dark:text-amber-400" />,
+            badge: 'Mới'
+          }
+        ]
       }
     ],
     do_thi: [
@@ -166,19 +179,6 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
         ]
       }
     ],
-    tro_giup: [
-      {
-        groupTitle: 'Trợ Giúp & Thiết Lập',
-        tools: [
-          {
-            id: 'guide',
-            label: 'Hướng Dẫn Sử Dụng',
-            icon: <HelpCircle size={19} className="text-emerald-600 dark:text-emerald-400" />
-          }
-        ]
-      }
-    ]
-  };
     tro_giup: [
       {
         groupTitle: 'Trợ Giúp & Thiết Lập',

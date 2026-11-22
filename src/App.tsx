@@ -25,6 +25,7 @@ import { BookUploadModal } from './components/BookUploadModal';
 import { ParsedLessonItem } from './utils/bookParser';
 import CV7991ExamGenerator from './components/CV7991ExamGenerator';
 import SimilarExamGenerator from './components/SimilarExamGenerator';
+import ExamCritiqueTool from './components/ExamCritiqueTool';
 import FunctionGraphTool from './components/FunctionGraphTool';
 import GeometryTool from './components/GeometryTool';
 import UserGuide from './components/UserGuide';
@@ -35,6 +36,7 @@ export type ActiveTabType =
   | 'matrix_full'
   | 'cv7991' 
   | 'similar' 
+  | 'critique'
   | 'function_graph' 
   | 'geometry' 
   | 'guide';
@@ -226,6 +228,7 @@ export default function App() {
       case 'matrix_full': return 'Ma Trận & Đặc Tả 10.0đ';
       case 'cv7991': return 'Sinh Đề Theo Ma Trận';
       case 'similar': return 'Nhân Bản Đề Tương Tự';
+      case 'critique': return 'Phản Biện Đề Thi';
       case 'function_graph': return 'Bảng Biến Thiên & Đồ Thị Oxy';
       case 'geometry': return 'Hình Học 3D & GeoGebra';
       case 'guide': default: return 'Hướng Dẫn Sử Dụng';
@@ -325,7 +328,17 @@ export default function App() {
             <SimilarExamGenerator apiKey={apiKey} model={preferredModel} />
           </div>
 
-          {/* TAB 5: BẢNG BIẾN THIÊN & ĐỒ THỊ OXY 300 DPI */}
+          {/* TAB 5: PHẢN BIỆN ĐỀ THI & MA TRẬN ĐẶC TẢ */}
+          <div className={activeTab === 'critique' ? 'block animate-fade-in' : 'hidden'}>
+            <ExamCritiqueTool 
+              apiKey={apiKey} 
+              model={preferredModel}
+              currentSystemExam={examData}
+              onApplyFixedExam={setExamData}
+            />
+          </div>
+
+          {/* TAB 6: BẢNG BIẾN THIÊN & ĐỒ THỊ OXY 300 DPI */}
           <div className={activeTab === 'function_graph' ? 'block animate-fade-in' : 'hidden'}>
             <FunctionGraphTool apiKey={apiKey} model={preferredModel} />
           </div>

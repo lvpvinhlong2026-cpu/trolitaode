@@ -11,7 +11,8 @@ import {
   Sliders, 
   Download,
   Copy,
-  MousePointer
+  MousePointer,
+  ShieldCheck
 } from 'lucide-react';
 
 interface GuideSection {
@@ -139,8 +140,45 @@ export default function UserGuide() {
       )
     },
     {
+      id: 'critique',
+      title: '4. Phản Biện Đề Thi & Phương Án Nhiễu',
+      icon: <ShieldCheck size={17} className="text-amber-600" />,
+      badge: 'Mới',
+      content: (
+        <div className="space-y-4 text-xs">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+              Thẩm Định, Phản Biện & Chuẩn Hóa Đề Thi Bằng AI
+            </h3>
+            <p className="text-slate-500 dark:text-slate-400 mt-1">
+              Phân tích tính hợp lý sư phạm, rà soát ngôn từ câu chữ khoa học, đánh giá bẫy tư duy và các phương án gây nhiễu.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="p-3 bg-amber-50/60 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800/60">
+              <h4 className="font-bold text-amber-800 dark:text-amber-300 mb-1">🔍 4 Trụ Cột Phản Biện Sư Phạm:</h4>
+              <ul className="list-disc pl-5 mt-1 space-y-1 text-slate-600 dark:text-slate-300">
+                <li><strong>Tính chuẩn xác ngôn từ:</strong> Phát hiện câu chữ đa nghĩa, thiếu dữ kiện, diễn đạt luộm thuộm hoặc vi phạm quy chuẩn khảo thí.</li>
+                <li><strong>Phương án nhiễu & Lỗi thường sai:</strong> Thẩm định từng đáp án gây nhiễu dựa trên các quan niệm sai lầm (misconceptions) và thói quen tính toán ẩu của học sinh.</li>
+                <li><strong>Đề xuất sửa đổi hoàn chỉnh:</strong> Đưa ra phiên bản câu hỏi nâng cấp đã được chuẩn hóa câu lệnh, các phương án lựa chọn và lời giải chi tiết.</li>
+                <li><strong>Báo cáo thẩm định .docx:</strong> Tải biên bản phản biện chuyên nghiệp gồm bảng điểm tổng thể (thang 10), bảng rà soát từng câu và phụ lục đề thi đã chỉnh sửa.</li>
+              </ul>
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+              <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1">📥 Nguồn dữ liệu đề & ma trận linh hoạt:</h4>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                Quý Thầy/Cô có thể tải trực tiếp file Word (.docx) hoặc nạp đề đang soạn trong hệ thống với 1 cú nhấp chuột.
+              </p>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
       id: 'math_tools',
-      title: '4. Đồ Thị Oxy & Hình Học 3D (Cắt Sát Viền 24px)',
+      title: '5. Đồ Thị Oxy & Hình Học 3D (Cắt Sát Viền 24px)',
       icon: <TrendingUp size={17} className="text-blue-600" />,
       badge: '300 DPI',
       content: (
@@ -167,7 +205,7 @@ export default function UserGuide() {
     },
     {
       id: 'actions',
-      title: '5. Thao Tác Chuẩn: Thêm – Xóa – Làm Lại',
+      title: '6. Thao Tác Chuẩn: Thêm – Xóa – Làm Lại',
       icon: <MousePointer size={17} className="text-amber-600" />,
       content: (
         <div className="space-y-4 text-xs">
