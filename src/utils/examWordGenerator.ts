@@ -43,7 +43,7 @@ function createTextRuns(text: string, bold = false, italic = false, underline = 
     }));
 }
 
-function createParagraph(runs: TextRun[], alignment = AlignmentType.LEFT, spacing = { after: 200 }) {
+function createParagraph(runs: TextRun[], alignment: any = AlignmentType.LEFT, spacing: any = { after: 200 }) {
     return new Paragraph({ children: runs, alignment, spacing });
 }
 

@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Loader2, Download, AlertCircle, CheckCircle2, Edit3, Settings, Copy } from 'lucide-react';
+import { Upload, FileText, Loader2, Download, AlertCircle, CheckCircle2, Edit3, Settings, Copy, Play } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import JSZip from 'jszip';
 import EditorToolbar from './EditorToolbar';
+import MarkdownEditor from './MarkdownEditor';
 
 interface Props {
   apiKey: string;
@@ -17,8 +18,11 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [resultText, setResultText] = useState<string>('');
+  const [isAiFinished, setIsAiFinished] = useState<boolean>(true);
   
-  const [includeSolution, setIncludeSolution] = useState<boolean>(true);
+  const [includeShortSolution, setIncludeShortSolution] = useState<boolean>(false);
+  const [useRealWorldData, setUseRealWorldData] = useState<boolean>(false);
+  const [noParameterM, setNoParameterM] = useState<boolean>(false);
   const [examCount, setExamCount] = useState<number>(1);
   const [contextSuggestion, setContextSuggestion] = useState<string>('');
   
@@ -29,7 +33,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
       const selectedFiles = Array.from(e.target.files);
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg', 'image/jpg'];
       
-      const filteredFiles = selectedFiles.filter(f => {
+      const filteredFiles = (selectedFiles as File[]).filter((f: File) => {
         const ext = f.name.toLowerCase();
         return validTypes.includes(f.type) || ext.endsWith('.docx') || ext.endsWith('.pdf') || ext.endsWith('.png') || ext.endsWith('.jpg') || ext.endsWith('.jpeg');
       });
@@ -55,7 +59,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
       const selectedFiles = Array.from(e.dataTransfer.files);
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg', 'image/jpg'];
       
-      const filteredFiles = selectedFiles.filter(f => {
+      const filteredFiles = (selectedFiles as File[]).filter((f: File) => {
         const ext = f.name.toLowerCase();
         return validTypes.includes(f.type) || ext.endsWith('.docx') || ext.endsWith('.pdf') || ext.endsWith('.png') || ext.endsWith('.jpg') || ext.endsWith('.jpeg');
       });
@@ -135,6 +139,8 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
     setResultText('');
     setProgress(10);
 
+    const finalContextSuggestion = `${contextSuggestion}\n${noParameterM ? '- Yêu cầu các câu hỏi KHÔNG chứa tham số m.\n' : ''}${useRealWorldData ? '- Ưu tiên sử dụng nhiều dữ kiện thực tế, bối cảnh thực tiễn vào các câu hỏi.\n' : ''}`;
+
     try {
       let extractedText = '';
 
@@ -190,9 +196,9 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
             parsingMode: 'similar_exam',
             model: model || 'gemini-1.5-pro',
             apiKey: apiKey,
-            includeSolution,
+            includeShortSolution,
             examCount,
-            contextSuggestion
+            contextSuggestion: finalContextSuggestion
           })
         });
 
@@ -209,6 +215,8 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
 
         const data = await res.json();
         extractedText = data.text;
+        if (data.isFinished === false) setIsAiFinished(false);
+        else setIsAiFinished(true);
 
       } else {
         setStatus('Đang đọc dữ liệu file...');
@@ -248,9 +256,9 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
             parsingMode: 'similar_exam',
             model: model || 'gemini-1.5-pro',
             apiKey: apiKey,
-            includeSolution,
+            includeShortSolution,
             examCount,
-            contextSuggestion
+            contextSuggestion: finalContextSuggestion
           })
         });
 
@@ -267,6 +275,8 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
 
         const data = await res.json();
         extractedText = data.text;
+        if (data.isFinished === false) setIsAiFinished(false);
+        else setIsAiFinished(true);
       }
       
       setProgress(70);
@@ -295,6 +305,8 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
     setSuccess('');
     setStatus('Đang gửi phần đang viết dở cho AI để sinh tiếp...');
     setProgress(30);
+
+    const finalContextSuggestion = `${contextSuggestion}\n${noParameterM ? '- Yêu cầu các câu hỏi KHÔNG chứa tham số m.\n' : ''}${useRealWorldData ? '- Ưu tiên sử dụng nhiều dữ kiện thực tế, bối cảnh thực tiễn vào các câu hỏi.\n' : ''}`;
 
     try {
       const base64Files = [];
@@ -354,24 +366,28 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
          const res = await fetch('/api/convert-word', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ textContent: parsedText, parsingMode: 'similar_exam', model: model || 'gemini-1.5-pro', apiKey, includeSolution, examCount, contextSuggestion, continueFromText: resultText })
+           body: JSON.stringify({ textContent: parsedText, parsingMode: 'similar_exam', model: model || 'gemini-1.5-pro', apiKey, includeShortSolution, examCount, contextSuggestion: finalContextSuggestion, continueFromText: resultText })
          });
          if (!res.ok) throw new Error('Lỗi từ máy chủ API.');
          const data = await res.json();
          setResultText(prev => prev + '\n' + data.text);
+         if (data.isFinished === false) setIsAiFinished(false);
+         else setIsAiFinished(true);
       } else {
          const res = await fetch('/api/convert-pdf', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ files: base64Files, parsingMode: 'similar_exam', model: model || 'gemini-1.5-pro', apiKey, includeSolution, examCount, contextSuggestion, continueFromText: resultText })
+           body: JSON.stringify({ files: base64Files, parsingMode: 'similar_exam', model: model || 'gemini-1.5-pro', apiKey, includeShortSolution, examCount, contextSuggestion: finalContextSuggestion, continueFromText: resultText })
          });
          if (!res.ok) throw new Error('Lỗi từ máy chủ API.');
          const data = await res.json();
          setResultText(prev => prev + '\n' + data.text);
+         if (data.isFinished === false) setIsAiFinished(false);
+         else setIsAiFinished(true);
       }
       
-      setProgress(100);
       setSuccess('Đã tạo tiếp phần nội dung bị thiếu!');
+      setProgress(100);
     } catch (err: any) {
       setError(err.message || 'Lỗi khi sinh tiếp nội dung.');
     } finally {
@@ -395,12 +411,12 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
           Tạo Đề Thi Tương Tự Bằng AI (Từ PDF/Word/Ảnh)
         </h2>
         <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm max-w-2xl mx-auto">
-          Tải lên đề thi gốc của bạn, hệ thống AI sẽ tự động phân tích cấu trúc, độ khó và dạng bài để sinh ra một đề thi hoàn toàn mới nhưng tương đương, kèm theo lời giải chi tiết (hỗ trợ xuất file Word LaTeX).
+          Tải lên đề thi gốc của bạn, hệ thống AI sẽ tự động phân tích cấu trúc, độ khó và dạng bài để sinh ra một đề thi hoàn toàn mới nhưng tương đương, kèm theo lời giải (nếu có yêu cầu).
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="md:col-span-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 items-stretch">
+        <div className="h-full">
           <div 
             className={`border-2 border-dashed rounded-3xl p-8 text-center transition-all h-full flex flex-col justify-center items-center ${
               files.length > 0 ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-900/20' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'
@@ -458,7 +474,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
           <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 h-full flex flex-col justify-center">
             <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-4">
               <Settings size={18} className="text-purple-500" />
-              Cấu Hình Xử Lý
+              Cấu hình xử lý
             </h3>
             
             <div className="space-y-4">
@@ -482,13 +498,32 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
                   <label className="flex items-center gap-3 cursor-pointer mt-2">
                     <input 
                       type="checkbox"
-                      checked={includeSolution}
-                      onChange={(e) => setIncludeSolution(e.target.checked)}
+                      checked={includeShortSolution}
+                      onChange={(e) => setIncludeShortSolution(e.target.checked)}
                       className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-gray-300"
                     />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">Kèm Lời Giải Chi Tiết</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">Kèm đáp án ngắn gọn</span>
                   </label>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 pl-7">Hệ thống sẽ tự động cung cấp đáp án & lời giải cuối mỗi đề thi.</p>
+
+                  <label className="flex items-center gap-3 cursor-pointer mt-2">
+                    <input 
+                      type="checkbox"
+                      checked={noParameterM}
+                      onChange={(e) => setNoParameterM(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-gray-300"
+                    />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">Câu hỏi không có tham số m</span>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer mt-2">
+                    <input 
+                      type="checkbox"
+                      checked={useRealWorldData}
+                      onChange={(e) => setUseRealWorldData(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-gray-300"
+                    />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">Câu hỏi sử dụng nhiều dữ kiện thực tế</span>
+                  </label>
 
                   <div className="mt-2">
                     <label className="block font-semibold text-slate-800 dark:text-slate-200 mb-1">Gợi ý thay đổi ngữ cảnh (Tùy chọn):</label>
@@ -563,7 +598,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
           <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
             <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <Edit3 size={18} className="text-purple-500" />
-              Trình Soạn Thảo (Live Editor)
+              Trình soạn thảo (Live Editor)
             </h3>
             <span className="text-xs font-medium px-2.5 py-1 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 rounded-lg">
               Sẵn sàng xuất file
@@ -572,26 +607,37 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
           
           <div className="p-0 bg-white dark:bg-slate-800 flex flex-col">
             <EditorToolbar text={resultText} setText={setResultText} onContinue={handleContinueConvert} isProcessing={isProcessing} />
-            <textarea
-              value={resultText}
-              onChange={(e) => setResultText(e.target.value)}
-              className="w-full h-[400px] p-5 bg-transparent text-slate-700 dark:text-slate-300 outline-none resize-y font-mono text-sm leading-relaxed"
-              spellCheck={false}
-              placeholder="Đang chờ kết quả từ AI..."
-            />
+            <MarkdownEditor text={resultText} setText={setResultText} />
           </div>
           
-          <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Bạn có thể chỉnh sửa tự do trong ô trên. Khi thấy ưng ý, hãy nhấn lưu thành file Word.
-            </p>
-            <button
-              onClick={handleDownloadWord}
-              className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-green-500/20 hover:-translate-y-0.5"
-            >
-              <Download size={18} />
-              Lưu thành file Word (.docx)
-            </button>
+          <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+            {isAiFinished === false ? (
+              <p className="text-sm font-bold text-orange-600 dark:text-orange-400 max-w-lg flex items-center gap-2">
+                <AlertCircle size={18} className="shrink-0" />
+                AI bị ngắt giữa chừng do văn bản quá dài. Vui lòng nhấn nút "Tiếp tục sinh" để hoàn thành nốt phần bị thiếu!
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
+                Bạn có thể chỉnh sửa tự do trong ô trên. Khi thấy ưng ý, hãy nhấn lưu thành file Word. Nếu AI bị ngắt giữa chừng, hãy nhấn Tiếp tục sinh.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={handleContinueConvert}
+                disabled={isProcessing || !resultText.trim()}
+                className={`flex items-center gap-2 px-6 py-2.5 font-bold text-sm rounded-xl transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isAiFinished === false ? 'bg-orange-500 hover:bg-orange-600 text-white animate-pulse' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'}`}
+              >
+                {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
+                {isAiFinished === false ? 'Tiếp Tục Sinh Phần Thiếu' : 'Tiếp tục sinh'}
+              </button>
+              <button
+                onClick={handleDownloadWord}
+                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-green-500/20 hover:-translate-y-0.5"
+              >
+                <Download size={18} />
+                Lưu thành file Word (.docx)
+              </button>
+            </div>
           </div>
         </div>
       )}

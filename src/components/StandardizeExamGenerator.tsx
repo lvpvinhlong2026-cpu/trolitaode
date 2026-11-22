@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Loader2, Download, AlertCircle, CheckCircle2, Edit3, Settings, Copy } from 'lucide-react';
+import { Upload, FileText, Loader2, Download, AlertCircle, CheckCircle2, Edit3, Settings, Copy, Play, RotateCcw } from 'lucide-react';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import JSZip from 'jszip';
 import EditorToolbar from './EditorToolbar';
+import MarkdownEditor from './MarkdownEditor';
 
 interface Props {
   apiKey: string;
@@ -17,8 +18,9 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [resultText, setResultText] = useState<string>('');
+  const [isAiFinished, setIsAiFinished] = useState<boolean>(true);
   
-  const [includeSolution, setIncludeSolution] = useState<boolean>(true);
+  const [includeShortSolution, setIncludeShortSolution] = useState<boolean>(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -27,7 +29,7 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
       const selectedFiles = Array.from(e.target.files);
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg', 'image/jpg'];
       
-      const filteredFiles = selectedFiles.filter(f => {
+      const filteredFiles = (selectedFiles as File[]).filter((f: File) => {
         const ext = f.name.toLowerCase();
         return validTypes.includes(f.type) || ext.endsWith('.docx') || ext.endsWith('.pdf') || ext.endsWith('.png') || ext.endsWith('.jpg') || ext.endsWith('.jpeg');
       });
@@ -53,7 +55,7 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
       const selectedFiles = Array.from(e.dataTransfer.files);
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg', 'image/jpg'];
       
-      const filteredFiles = selectedFiles.filter(f => {
+      const filteredFiles = (selectedFiles as File[]).filter((f: File) => {
         const ext = f.name.toLowerCase();
         return validTypes.includes(f.type) || ext.endsWith('.docx') || ext.endsWith('.pdf') || ext.endsWith('.png') || ext.endsWith('.jpg') || ext.endsWith('.jpeg');
       });
@@ -66,6 +68,21 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
       setError('');
       setSuccess('');
       setResultText('');
+    }
+  };
+
+  const handleReset = () => {
+    setFiles([]);
+    setIsProcessing(false);
+    setProgress(0);
+    setStatus('');
+    setError('');
+    setSuccess('');
+    setResultText('');
+    setIsAiFinished(true);
+    setIncludeShortSolution(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -186,9 +203,9 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
           body: JSON.stringify({
             textContent: parsedText,
             parsingMode: 'standardize_exam',
-            model: model || 'gemini-1.5-pro',
+            model: model || 'auto',
             apiKey: apiKey,
-            includeSolution
+            includeShortSolution
           })
         });
 
@@ -199,6 +216,8 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
 
         const data = await res.json();
         extractedText = data.text;
+        if (data.isFinished === false) setIsAiFinished(false);
+        else setIsAiFinished(true);
 
       } else {
         setStatus('Đang đọc dữ liệu file...');
@@ -236,9 +255,9 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
           body: JSON.stringify({
             files: base64Files,
             parsingMode: 'standardize_exam',
-            model: model || 'gemini-1.5-pro',
+            model: model || 'auto',
             apiKey: apiKey,
-            includeSolution
+            includeShortSolution
           })
         });
 
@@ -249,6 +268,8 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
 
         const data = await res.json();
         extractedText = data.text;
+        if (data.isFinished === false) setIsAiFinished(false);
+        else setIsAiFinished(true);
       }
       
       setProgress(70);
@@ -332,20 +353,24 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
          const res = await fetch('/api/convert-word', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ textContent: parsedText, parsingMode: 'standardize_exam', model: model || 'gemini-1.5-pro', apiKey, includeSolution, continueFromText: resultText })
+           body: JSON.stringify({ textContent: parsedText, parsingMode: 'standardize_exam', model: model || 'auto', apiKey, includeShortSolution, continueFromText: resultText })
          });
          if (!res.ok) throw new Error('Lỗi từ máy chủ API.');
          const data = await res.json();
          setResultText(prev => prev + '\n' + data.text);
+         if (data.isFinished === false) setIsAiFinished(false);
+         else setIsAiFinished(true);
       } else {
          const res = await fetch('/api/convert-pdf', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ files: base64Files, parsingMode: 'standardize_exam', model: model || 'gemini-1.5-pro', apiKey, includeSolution, continueFromText: resultText })
+           body: JSON.stringify({ files: base64Files, parsingMode: 'standardize_exam', model: model || 'auto', apiKey, includeShortSolution, continueFromText: resultText })
          });
          if (!res.ok) throw new Error('Lỗi từ máy chủ API.');
          const data = await res.json();
          setResultText(prev => prev + '\n' + data.text);
+         if (data.isFinished === false) setIsAiFinished(false);
+         else setIsAiFinished(true);
       }
       
       setProgress(100);
@@ -370,15 +395,15 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
           <div className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center text-violet-600 dark:text-violet-400">
             <CheckCircle2 size={20} />
           </div>
-          Chuẩn Hóa Đề Theo Mức Độ
+          Chuẩn hóa đề theo mức độ
         </h2>
         <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm max-w-2xl mx-auto">
           Tải lên một đề thi thô (Word, PDF, Ảnh). Hệ thống sẽ định dạng lại cấu trúc chuẩn (3 phần) và ĐÁNH GIÁ MỨC ĐỘ [B], [H], [VD] cho từng câu hỏi, từng ý.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="md:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 items-stretch">
+        <div className="h-full">
           <div 
             className={`border-2 border-dashed rounded-3xl p-8 text-center transition-all h-full flex flex-col justify-center items-center ${
               files.length > 0 ? 'border-purple-500 bg-purple-50/50 dark:bg-purple-900/20' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'
@@ -436,44 +461,60 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
           <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 h-full flex flex-col justify-center">
             <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-4">
               <Settings size={18} className="text-purple-500" />
-              Cấu Hình Xử Lý
+              Cấu hình xử lý
             </h3>
             
             <div className="space-y-4">
               <div className="block relative p-4 border border-violet-500 bg-violet-50/50 dark:bg-violet-900/20 rounded-2xl transition-all">
                 <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-3 cursor-pointer">
+                  <label className="flex items-center gap-3 cursor-pointer mt-2">
                     <input 
                       type="checkbox"
-                      checked={includeSolution}
-                      onChange={(e) => setIncludeSolution(e.target.checked)}
+                      checked={includeShortSolution}
+                      onChange={(e) => setIncludeShortSolution(e.target.checked)}
                       className="w-4 h-4 rounded text-violet-600 focus:ring-violet-500 border-gray-300"
                     />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">Kèm Lời Giải Chi Tiết</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">Kèm lời giải ngắn gọn</span>
                   </label>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 pl-7">Hệ thống sẽ tự động cung cấp đáp án & lời giải chi tiết ở cuối tài liệu.</p>
+                  
+
+
                 </div>
               </div>
             </div>
             
-            <button
-              onClick={handleConvert}
-              disabled={files.length === 0 || isProcessing}
-              className={`w-full mt-6 flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-violet-500/20 ${
-                files.length === 0 || isProcessing
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-700 dark:text-slate-500 shadow-none'
-                  : 'bg-violet-600 text-white hover:bg-violet-700 hover:shadow-violet-500/40 hover:-translate-y-0.5'
-              }`}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  Đang xử lý...
-                </>
-              ) : (
-                'Bắt Đầu Chuẩn Hóa Đề'
-              )}
-            </button>
+            <div className="flex items-center gap-2.5 mt-6">
+              <button
+                onClick={resultText ? handleContinueConvert : handleConvert}
+                disabled={files.length === 0 || isProcessing}
+                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-violet-500/20 ${
+                  files.length === 0 || isProcessing
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-slate-700 dark:text-slate-500 shadow-none'
+                    : 'bg-violet-600 text-white hover:bg-violet-700 hover:shadow-violet-500/40 hover:-translate-y-0.5'
+                }`}
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Đang xử lý...
+                  </>
+                ) : resultText ? (
+                  'Tiếp tục chuẩn hóa đề'
+                ) : (
+                  'Bắt đầu chuẩn hóa đề'
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReset}
+                className="flex items-center justify-center gap-1.5 px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 font-bold rounded-2xl border border-slate-200 dark:border-slate-700 transition cursor-pointer active:scale-95 shrink-0 shadow-xs"
+                title="Xóa làm lại - Bắt đầu lại từ đầu"
+              >
+                <RotateCcw size={16} />
+                <span className="hidden sm:inline text-xs">Xóa làm lại</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -516,7 +557,7 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
           <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
             <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <Edit3 size={18} className="text-purple-500" />
-              Trình Soạn Thảo (Live Editor)
+              Trình soạn thảo (Live Editor)
             </h3>
             <span className="text-xs font-medium px-2.5 py-1 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 rounded-lg">
               Sẵn sàng xuất file
@@ -525,26 +566,47 @@ export default function StandardizeExamGenerator({ apiKey, model }: Props) {
           
           <div className="p-0 bg-white dark:bg-slate-800 flex flex-col">
             <EditorToolbar text={resultText} setText={setResultText} onContinue={handleContinueConvert} isProcessing={isProcessing} />
-            <textarea
-              value={resultText}
-              onChange={(e) => setResultText(e.target.value)}
-              className="w-full h-[400px] p-5 bg-transparent text-slate-700 dark:text-slate-300 outline-none resize-y font-mono text-sm leading-relaxed"
-              spellCheck={false}
-              placeholder="Đang chờ kết quả từ AI..."
-            />
+            <MarkdownEditor text={resultText} setText={setResultText} />
           </div>
           
-          <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Bạn có thể chỉnh sửa tự do trong ô trên. Khi thấy ưng ý, hãy nhấn lưu thành file Word.
-            </p>
-            <button
-              onClick={handleDownloadWord}
-              className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-green-500/20 hover:-translate-y-0.5"
-            >
-              <Download size={18} />
-              Lưu thành file Word (.docx)
-            </button>
+          <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+            {isAiFinished === false ? (
+              <p className="text-sm font-bold text-orange-600 dark:text-orange-400 max-w-lg flex items-center gap-2">
+                <AlertCircle size={18} className="shrink-0" />
+                AI bị ngắt giữa chừng do văn bản quá dài. Vui lòng nhấn nút "Tiếp tục sinh" để hoàn thành nốt phần bị thiếu!
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
+                Bạn có thể chỉnh sửa tự do trong ô trên. Khi thấy ưng ý, hãy nhấn lưu thành file Word. Nếu AI bị ngắt giữa chừng, hãy nhấn Tiếp tục sinh.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleReset}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                title="Xóa làm lại - Bắt đầu lại từ đầu"
+              >
+                <RotateCcw size={14} />
+                <span>Xóa làm lại</span>
+              </button>
+
+              <button
+                onClick={handleContinueConvert}
+                disabled={isProcessing || !resultText.trim()}
+                className={`flex items-center gap-2 px-6 py-2.5 font-bold text-sm rounded-xl transition-all shadow-sm hover:shadow-md disabled:opacity-50 ${isAiFinished === false ? 'bg-orange-500 hover:bg-orange-600 text-white animate-pulse' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'}`}
+              >
+                {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
+                {isAiFinished === false ? 'Tiếp Tục Sinh Phần Thiếu' : 'Tiếp tục sinh'}
+              </button>
+              <button
+                onClick={handleDownloadWord}
+                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-green-500/20 hover:-translate-y-0.5"
+              >
+                <Download size={18} />
+                Lưu thành file Word (.docx)
+              </button>
+            </div>
           </div>
         </div>
       )}

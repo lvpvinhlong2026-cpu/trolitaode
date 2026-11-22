@@ -3,256 +3,102 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import LZString from 'lz-string';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
+  Check, 
   Sparkles, 
   Settings, 
-  FileText, 
-  QrCode, 
-  BarChart4, 
-  GraduationCap, 
-  FileSignature, 
-  Key, 
-  Download, 
-  Upload, 
-  Moon, 
-  Sun,
-  Eye, 
-  EyeOff, 
-  Check, 
-  AlertCircle,
-  Copy,
-  Table,
-  CheckCircle2
+  AlertCircle 
 } from 'lucide-react';
-import { AppData, LaTeXConversion, Question, Exam, Session, QuestionBank } from './types';
-import { 
-  getStoredData, 
-  saveStoredData, 
-  recalculateProgress, 
-  exportBackup, 
-  importBackup 
-} from './utils/dataStore';
+import { AppData } from './types';
+import { getStoredData, saveStoredData } from './utils/dataStore';
+import { ExamCV7991 } from './types/pedagogy';
+import { SAMPLES } from './data/sampleCurriculum';
 
-// Modules
-import PdfConverter from './components/PdfConverter';
+// Modules theo chuyên môn
+import { WordRibbonBar } from './components/WordRibbonBar';
+import { ContextMenu } from './components/ContextMenu';
+import { ExamCV7991View } from './components/ExamCV7991View';
+import { MatrixCV7991View } from './components/MatrixCV7991View';
+import { QuickBookUploadBar } from './components/QuickBookUploadBar';
+import { BookUploadModal } from './components/BookUploadModal';
+import { ParsedLessonItem } from './utils/bookParser';
+import CV7991ExamGenerator from './components/CV7991ExamGenerator';
 import SimilarExamGenerator from './components/SimilarExamGenerator';
-import MatrixExamGenerator from './components/MatrixExamGenerator';
 import StandardizeExamGenerator from './components/StandardizeExamGenerator';
-import AITutor from './components/AITutor';
+import TextCorrection from './components/TextCorrection';
+import FunctionGraphTool from './components/FunctionGraphTool';
+import GeometryTool from './components/GeometryTool';
+import LessonPlanGenerator from './components/LessonPlanGenerator';
+import MindmapGenerator from './components/MindmapGenerator';
+import IllustrationGenerator from './components/IllustrationGenerator';
+import SimulationGenerator from './components/SimulationGenerator';
+import UserGuide from './components/UserGuide';
 import SettingsForm from './components/SettingsForm';
-import { motion, AnimatePresence } from 'motion/react';
+
+export type ActiveTabType = 
+  | 'exam_full'
+  | 'matrix_full'
+  | 'cv7991' 
+  | 'similar' 
+  | 'standardize' 
+  | 'correction' 
+  | 'function_graph' 
+  | 'geometry' 
+  | 'lesson_plan' 
+  | 'mindmap' 
+  | 'illustration' 
+  | 'simulation' 
+  | 'guide';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData | null>(null);
-  const isStudentPortal = new URLSearchParams(window.location.search).has('examId') || new URLSearchParams(window.location.search).has('examData');
-  const [activeTab, setActiveTab] = useState<'pdf' | 'similar' | 'standardize' | 'matrix' | 'tutor'>('pdf');
-  const [qrTargetExam, setQrTargetExam] = useState<Exam | null>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTabType>('exam_full');
+  const [isRibbonCollapsed, setIsRibbonCollapsed] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Backup and Restore states
-  const [importError, setImportError] = useState<string>('');
-  const [importSuccess, setImportSuccess] = useState<boolean>(false);
+  // Quản lý đề thi chuẩn CV 7991 (4 phần, trộn đề, thi thử)
+  const [examData, setExamData] = useState<ExamCV7991>(SAMPLES[0].exam);
+  const [isBookUploadModalOpen, setIsBookUploadModalOpen] = useState(false);
 
-  // API Key & Model Settings states
+  // API Key & Model Settings states (Gemini 3 Pro -> Gemini 3 Flash -> Gemini 2.5 Flash Auto Fallback)
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
-  const [preferredModel, setPreferredModel] = useState<string>(() => localStorage.getItem('gemini_preferred_model') || 'gemini-3-flash-preview');
+  const [preferredModel, setPreferredModel] = useState<string>(() => {
+    const saved = localStorage.getItem('gemini_preferred_model');
+    const validModels = [
+      'auto', 
+      'gemini-3-pro-preview', 
+      'gemini-3-flash-preview', 
+      'gemini-2.5-flash', 
+      'gemini-2.5-pro',
+      'gemini-2.0-flash'
+    ];
+    if (saved && validModels.includes(saved)) {
+      return saved;
+    }
+    localStorage.setItem('gemini_preferred_model', 'auto');
+    return 'auto';
+  });
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showKeyRequiredModal, setShowKeyRequiredModal] = useState<boolean>(false);
 
-  // Check key on load
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.has('examId') && !params.has('examData')) {
-      const key = localStorage.getItem('gemini_api_key');
-      if (!key || !key.trim()) {
-        setShowKeyRequiredModal(true);
-      }
-    }
-  }, []);
-
   // Load state on mount
   useEffect(() => {
-    // Standard data
     const data = getStoredData();
     setAppData(data);
 
-    // Dark mode classes synced
     if (data.settings.theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-
-    // Handle student deep link (Removed as system is now PDF Converter)
   }, []);
 
-  // Sync state data trigger helper
-  const updateAppDataState = (updated: AppData) => {
-    setAppData(updated);
-    saveStoredData(updated);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // State Callbacks
-
-  const handleAddBank = (bankName: string): string => {
-    if (!appData) return '';
-    const newBank: QuestionBank = {
-      id: 'bank-' + Math.random().toString(36).substring(2, 9),
-      name: bankName,
-      createdAt: new Date().toISOString()
-    };
-    updateAppDataState({
-      ...appData,
-      questionBanks: [newBank, ...appData.questionBanks]
-    });
-    return newBank.id;
-  };
-
-  const handleDeleteBank = (bankId: string) => {
-    if (!appData) return;
-    
-    // Find questions to delete
-    const questionsToDelete = appData.questions.filter(q => q.bankId === bankId);
-    const newQuestions = appData.questions.filter(q => q.bankId !== bankId);
-    
-    // Update subjects questionsCount accordingly
-    let newSubjects = [...appData.subjects];
-    questionsToDelete.forEach(deletedQuestion => {
-      newSubjects = newSubjects.map(sub => {
-        if (sub.id === deletedQuestion.subjectId) {
-          return { ...sub, questionsCount: Math.max(0, sub.questionsCount - 1) };
-        }
-        return sub;
-      });
-    });
-
-    const newBanks = appData.questionBanks.filter(b => b.id !== bankId);
-
-    updateAppDataState({ 
-      ...appData, 
-      questions: newQuestions, 
-      subjects: newSubjects,
-      questionBanks: newBanks
-    });
-  };
-
-  const handleAddQuestions = (questions: Question[], bankId: string) => {
-    if (!appData) return;
-    
-    const questionsWithBank = questions.map(q => ({ ...q, bankId }));
-    const updatedQuestions = [...questionsWithBank, ...appData.questions];
-    
-    // Update question count for matching subjects
-    const updatedSubjects = appData.subjects.map(sub => {
-      const addedToSub = questions.filter(q => q.subjectId === sub.id).length;
-      if (addedToSub > 0) {
-        return { ...sub, questionsCount: sub.questionsCount + addedToSub };
-      }
-      return sub;
-    });
-
-    updateAppDataState({
-      ...appData,
-      subjects: updatedSubjects,
-      questions: updatedQuestions
-    });
-  };
-
-
-  const handleUpdateQuestion = (id: string, updatedFields: Partial<Question>) => {
-    if (!appData) return;
-    const newQuestions = appData.questions.map(q => q.id === id ? { ...q, ...updatedFields } : q);
-    updateAppDataState({ ...appData, questions: newQuestions });
-  };
-
-  const handleDeleteQuestion = (id: string) => {
-    if (!appData) return;
-    const newQuestions = appData.questions.filter(q => q.id !== id);
-    
-    // Update subjects questionsCount accordingly
-    const deletedQuestion = appData.questions.find(q => q.id === id);
-    let newSubjects = appData.subjects;
-    if (deletedQuestion) {
-      newSubjects = appData.subjects.map(sub => {
-        if (sub.id === deletedQuestion.subjectId) {
-          return { ...sub, questionsCount: Math.max(0, sub.questionsCount - 1) };
-        }
-        return sub;
-      });
-    }
-
-    updateAppDataState({ ...appData, questions: newQuestions, subjects: newSubjects });
-  };
-
-  const handleAddExam = (exam: Exam) => {
-    if (!appData) return;
-    updateAppDataState({
-      ...appData,
-      exams: [exam, ...appData.exams]
-    });
-    setQrTargetExam(exam);
-  };
-
-  const handleDeleteExam = (id: string) => {
-    if (!appData) return;
-    updateAppDataState({
-      ...appData,
-      exams: appData.exams.filter(ex => ex.id !== id)
-    });
-    if (qrTargetExam && qrTargetExam.id === id) {
-      setQrTargetExam(null);
-    }
-  };
-
-  const handleAddSession = (sess: Session) => {
-    if (!appData) return;
-    const list = [sess, ...appData.sessions];
-    const computedProgress = recalculateProgress(list);
-    updateAppDataState({
-      ...appData,
-      sessions: list,
-      progress: computedProgress
-    });
-  };
-
-  const handleDeleteSession = (id: string) => {
-    if (!appData) return;
-    const list = appData.sessions.filter(s => s.id !== id);
-    const computedProgress = recalculateProgress(list);
-    updateAppDataState({
-      ...appData,
-      sessions: list,
-      progress: computedProgress
-    });
-  };
-
-  const handleClearSessions = () => {
-    if (!appData) return;
-    const computedProgress = recalculateProgress([]);
-    updateAppDataState({
-      ...appData,
-      sessions: [],
-      progress: computedProgress
-    });
-  };
-
-  const handleAddStudentClass = (newClass: any) => {
-    if (!appData) return;
-    updateAppDataState({
-      ...appData,
-      studentClasses: [newClass, ...appData.studentClasses]
-    });
-  };
-
-  const handleDeleteStudentClass = (id: string) => {
-    if (!appData) return;
-    updateAppDataState({
-      ...appData,
-      studentClasses: appData.studentClasses.filter(c => c.id !== id)
-    });
-  };
-  // Dark Scheme toggler
   const handleToggleTheme = () => {
     if (!appData) return;
     const isDark = appData.settings.theme === 'dark';
@@ -264,72 +110,152 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
 
-    updateAppDataState({
+    const updated = {
       ...appData,
       settings: {
         ...appData.settings,
-        theme: nextTheme
-      }
-    });
-  };
-
-  // Exports Data backup file
-  const triggerExportBackup = () => {
-    if (!appData) return;
-    const jsonStr = exportBackup(appData);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup_toan_hoc_ai_studio_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  // Imports Data backup file
-  const handleImportBackupFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || !files[0]) return;
-
-    const file = files[0];
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const content = evt.target?.result as string;
-        const restored = importBackup(content);
-        setAppData(restored);
-        setImportSuccess(true);
-        setImportError('');
-        setTimeout(() => setImportSuccess(false), 2500);
-      } catch (err: any) {
-        setImportError(err.message);
-        setImportSuccess(false);
+        theme: nextTheme as 'light' | 'dark'
       }
     };
-    reader.readAsText(file);
-  };
-
-  const navigateToQRForExam = (exam: Exam) => {
-    setQrTargetExam(exam);
-    // Since QR tab is removed, this function may not be needed anymore, but we keep the state update.
+    setAppData(updated);
+    saveStoredData(updated);
   };
 
   const handleSaveSettings = (key: string, model: string) => {
-    localStorage.setItem('gemini_api_key', key);
+    const trimmed = key.trim();
+    localStorage.setItem('gemini_api_key', trimmed);
+    localStorage.setItem('edtech_gemini_api_key', trimmed);
     localStorage.setItem('gemini_preferred_model', model);
-    setApiKey(key);
+    setApiKey(trimmed);
     setPreferredModel(model);
     setShowSettingsModal(false);
     setShowKeyRequiredModal(false);
+    showToast("Đã lưu cấu hình AI thành công (Gemini Auto-Fallback)");
+  };
+
+  const handleSelectLessonFromBook = (lesson: ParsedLessonItem, meta: { subject: string; grade: string; series: any }) => {
+    setExamData(prev => ({
+      ...prev,
+      subject: meta.subject,
+      grade: meta.grade,
+      examTitle: `ĐỀ KIỂM TRA ĐỊNH KÌ MÔN ${meta.subject.toUpperCase()} - ${meta.grade.toUpperCase()} (${lesson.fullLessonName})`
+    }));
+    showToast(`Đã nạp bài: ${lesson.fullLessonName}`);
+  };
+
+  // =========================================================================
+  // BỘ 3 THAO TÁC BẮT BUỘC: THÊM (ADD), XÓA (DELETE), LÀM LẠI (RESET) (HD_PHUC)
+  // Thực hiện bằng Nút trên Ribbon và bằng Chuột (Context Menu) trên mọi tab
+  // =========================================================================
+
+  const handleAdd = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('app_action', { detail: { action: 'add', tab: activeTab } }));
+
+    if (activeTab === 'exam_full') {
+      const newQuestionNumber = examData.part1Questions.length + 1;
+      const newQuestion = {
+        id: `p1_new_${Date.now()}`,
+        number: newQuestionNumber,
+        cognitiveLevel: 'know' as const,
+        topic: examData.examTitle || 'Chủ đề mới',
+        content: `Câu hỏi ${newQuestionNumber}: Tính giá trị của biểu thức $P = \\lim_{x \\to 0} \\frac{\\sin x}{x}$.`,
+        options: {
+          A: "$P = 1$",
+          B: "$P = 0$",
+          C: "$P = +\\infty$",
+          D: "$P = -1$"
+        },
+        correctAnswer: 'A' as const,
+        explanation: 'Ta có giới hạn cơ bản: $\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$. Chọn đáp án A.'
+      };
+      setExamData(prev => ({
+        ...prev,
+        part1Questions: [...prev.part1Questions, newQuestion]
+      }));
+      showToast(`Đã thêm Câu hỏi ${newQuestionNumber} vào Phần I`);
+    } else if (activeTab === 'matrix_full') {
+      const newRow = {
+        topicName: `Chủ đề ${examData.matrixRows.length + 1}`,
+        unitName: `Bài học mới`,
+        part1: { know: 2, understand: 1, apply: 0 },
+        part2: { know: 1, understand: 0, apply: 0 },
+        part3: { know: 0, understand: 1, apply: 0 },
+        part4: { know: 0, understand: 0, apply: 1 }
+      };
+      setExamData(prev => ({
+        ...prev,
+        matrixRows: [...prev.matrixRows, newRow]
+      }));
+      showToast('Đã thêm 1 dòng chủ đề mới vào Ma trận');
+    } else {
+      showToast('Đã kích hoạt chức năng Thêm mới trên module');
+    }
+  }, [activeTab, examData]);
+
+  const handleDelete = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('app_action', { detail: { action: 'delete', tab: activeTab } }));
+
+    if (activeTab === 'exam_full') {
+      if (examData.part1Questions.length > 0) {
+        setExamData(prev => ({
+          ...prev,
+          part1Questions: prev.part1Questions.slice(0, -1)
+        }));
+        showToast('Đã xóa câu hỏi cuối cùng của Phần I');
+      } else {
+        showToast('Danh sách câu hỏi đang trống');
+      }
+    } else if (activeTab === 'matrix_full') {
+      if (examData.matrixRows.length > 1) {
+        setExamData(prev => ({
+          ...prev,
+          matrixRows: prev.matrixRows.slice(0, -1)
+        }));
+        showToast('Đã xóa dòng cuối cùng của Ma trận');
+      } else {
+        showToast('Tối thiểu phải giữ lại 1 dòng ma trận');
+      }
+    } else {
+      showToast('Đã kích hoạt chức năng Xóa nội dung trên module');
+    }
+  }, [activeTab, examData]);
+
+  const handleReset = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('app_action', { detail: { action: 'reset', tab: activeTab } }));
+
+    if (activeTab === 'exam_full' || activeTab === 'matrix_full') {
+      setExamData(SAMPLES[0].exam);
+      showToast('Đã khôi phục đề thi và ma trận chuẩn CV 7991 ban đầu');
+    } else {
+      showToast('Đã làm lại và khôi phục trạng thái chuẩn');
+    }
+  }, [activeTab]);
+
+  // Tab label for Context Menu
+  const getTabLabel = (tab: ActiveTabType): string => {
+    switch (tab) {
+      case 'exam_full': return 'Đề Thi Chuẩn CV 7991';
+      case 'matrix_full': return 'Ma Trận & Đặc Tả 10.0đ';
+      case 'cv7991': return 'Sinh Đề Theo Ma Trận';
+      case 'similar': return 'Nhân Bản Đề Tương Tự';
+      case 'standardize': return 'Bóc Tách OCR Sang LaTeX';
+      case 'correction': return 'Sửa Lỗi Văn Bản & LaTeX';
+      case 'function_graph': return 'Bảng Biến Thiên & Đồ Thị Oxy';
+      case 'geometry': return 'Hình Học 3D & GeoGebra';
+      case 'lesson_plan': return 'Kế Hoạch Bài Dạy 5512';
+      case 'mindmap': return 'Sơ Đồ Tư Duy';
+      case 'illustration': return 'Minh Họa Giáo Khoa';
+      case 'simulation': return 'Mô Phỏng Tương Tác';
+      case 'guide': default: return 'Hướng Dẫn Sử Dụng';
+    }
   };
 
   if (!appData) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#f8fafc]">
+      <div className="flex h-screen w-full items-center justify-center bg-[#fafafa] dark:bg-slate-900">
         <div className="text-center space-y-3">
-          <i className="fa-solid fa-spinner animate-spin text-3xl text-blue-500"></i>
-          <p className="text-sm text-slate-500 font-medium">Đang khởi tạo Hệ thống Trợ lý Toán học AI...</p>
+          <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs text-slate-500 font-medium">Đang khởi tạo Hệ thống Khảo Thí & Tạo Đề CV 7991...</p>
         </div>
       </div>
     );
@@ -338,187 +264,152 @@ export default function App() {
   const isDark = appData.settings.theme === 'dark';
 
   return (
-    <div className={`min-h-screen pb-16 transition-colors duration-300 bg-mesh ${isDark ? 'dark bg-slate-900 text-slate-100' : 'bg-[#f8fafc] text-slate-800'}`}>
+    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${isDark ? 'dark bg-slate-950 text-slate-100' : 'bg-[#fafafa] text-slate-800'}`}>
       
-      {/* HEADER SECTION WITH GRADIENT DECORATION */}
-      {!isStudentPortal && (
-      <header className="bg-gradient-to-r from-blue-700 via-indigo-700 to-orange-500 text-white shadow-md relative overflow-hidden">
-        {/* Ambient blurring background spheres */}
-        <div className="absolute top-0 right-1/4 w-80 h-32 bg-white/5 rounded-full blur-3xl"></div>
-        
-        <div className="max-w-7xl mx-auto px-4 py-5 flex flex-col md:flex-row items-center justify-between gap-4 relative z-10">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20 backdrop-blur-md shadow-inner text-white">
-              <i className="fa-solid fa-graduation-cap text-2xl"></i>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight">Trợ lí giáo dục</h1>
-                <span className="text-[10px] bg-white/15 px-2 py-0.5 rounded-full font-bold border border-white/10 uppercase">
-                  v2.5 Premium
-                </span>
-              </div>
-              <p className="text-xs text-blue-100/80 font-medium mt-0.5">
-                Hệ thống được tạo bởi GV: Lê Vĩnh Phúc, SĐT 0944405124
-              </p>
-            </div>
-          </div>
+      {/* 1. THANH ĐIỀU HƯỚNG RIBBON PHONG CÁCH MICROSOFT WORD */}
+      <WordRibbonBar
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        isRibbonCollapsed={isRibbonCollapsed}
+        onToggleRibbon={() => setIsRibbonCollapsed(prev => !prev)}
+        onAdd={handleAdd}
+        onDelete={handleDelete}
+        onReset={handleReset}
+        isDark={isDark}
+        onToggleTheme={handleToggleTheme}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenBookUpload={() => setIsBookUploadModalOpen(true)}
+        apiKey={apiKey}
+        preferredModel={preferredModel}
+      />
 
-          {/* Quick Toolbar */}
-          <div className="flex items-center gap-2.5 whitespace-nowrap">
+      {/* 2. MENU CHUỘT PHẢI (CONTEXT MENU) TƯƠNG TÁC THÊM - XÓA - LÀM LẠI & SAO CHÉP WORD (HD_PHUC) */}
+      <ContextMenu
+        onAdd={handleAdd}
+        onDelete={handleDelete}
+        onReset={handleReset}
+        activeTabLabel={getTabLabel(activeTab)}
+      />
 
-            {/* Settings & API Key Configuration */}
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              className={`p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
-                !apiKey.trim()
-                  ? 'bg-red-500/20 border-red-500 hover:bg-red-500/30 text-red-200'
-                  : 'bg-white/10 border-white/10 hover:bg-white/15 text-white'
-              }`}
-              title="Cấu hình Gemini API Key & Model"
-            >
-              <Settings size={13} />
-              <span>Cấu hình AI</span>
-              {!apiKey.trim() && (
-                <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-bold ml-1 animate-pulse">
-                  Lấy API key để sử dụng app
-                </span>
-              )}
-            </button>
-
-            {/* Dark Mode toggle icon */}
-            <button
-              onClick={handleToggleTheme}
-              className="p-2.5 bg-white/10 border border-white/10 hover:bg-white/20 rounded-xl transition"
-              title="Giao diện sáng/tối"
-            >
-              {isDark ? <Sun size={14} className="text-amber-300" /> : <Moon size={14} />}
-            </button>
-          </div>
+      {/* 3. THÔNG BÁO TOAST TINH GỌN (TỰ BIẾN MẤT) */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-slate-900/90 text-white dark:bg-white dark:text-slate-900 px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <Check size={14} className="text-teal-400 dark:text-teal-600" />
+          <span>{toastMessage}</span>
         </div>
-      </header>
       )}
 
-      {/* CORE MODULAR NAVIGATION PANEL */}
-      <main className="max-w-7xl mx-auto px-4 mt-8 space-y-6">
-        {/* Error indicators for restored profiles */}
-        {importError && (
-          <div className="flex items-center gap-2 text-xs text-red-600 p-3 bg-red-ec text-red-600 dark:bg-slate-800 border border-red-200 dark:border-red-900 rounded-xl">
-            <AlertCircle size={14} />
-            <span>{importError}</span>
-          </div>
-        )}
-        {importSuccess && (
-          <div className="flex items-center gap-2 text-xs text-emerald-600 p-3 bg-emerald-50 dark:bg-slate-800 border border-emerald-200 dark:border-emerald-900 rounded-xl">
-            <Check size={14} />
-            <span>Khôi phục dữ liệu hồ sơ thành công! Ngân hàng và đề thi đã cập nhật.</span>
-          </div>
-        )}
+      {/* 4. VÙNG LÀM VIỆC CHÍNH (TỐI ĐA HÓA 100% KHÔNG GIAN HIỂN THỊ - KHÔNG BỊ SIDEBAR CHIẾM DỤNG) */}
+      <main className="flex-1 overflow-y-auto p-2 sm:p-5 transition-all">
         
-        {/* Navigation Tabs Bar */}
-        {(new URLSearchParams(window.location.search).has('examId') || new URLSearchParams(window.location.search).has('examData')) ? null : (
-        <div className="flex border-b border-slate-200/60 dark:border-slate-800 p-1 bg-white/50 backdrop-blur-md rounded-2xl shadow-xs dark:bg-slate-900/40 divide-x divide-slate-100 dark:divide-slate-800">
-          <button
-            onClick={() => setActiveTab('pdf')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-semibold rounded-xl transition-all ${
-              activeTab === 'pdf'
-                ? 'bg-blue-600 text-white font-bold shadow-sm'
-                : 'text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400'
-            }`}
-          >
-            <FileText size={15} />
-            Chuyển PDF sang Word
-          </button>
-
-          <button
-            onClick={() => setActiveTab('similar')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-semibold rounded-xl transition-all ${
-              activeTab === 'similar'
-                ? 'bg-blue-600 text-white font-bold shadow-sm'
-                : 'text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400'
-            }`}
-          >
-            <Copy size={15} />
-            Tạo Đề Tương Tự
-          </button>
-
-          <button
-            onClick={() => setActiveTab('standardize')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-semibold rounded-xl transition-all ${
-              activeTab === 'standardize'
-                ? 'bg-blue-600 text-white font-bold shadow-sm'
-                : 'text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400'
-            }`}
-          >
-            <CheckCircle2 size={15} />
-            Chuẩn Hóa Đề
-          </button>
-
-          <button
-            onClick={() => setActiveTab('matrix')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-semibold rounded-xl transition-all ${
-              activeTab === 'matrix'
-                ? 'bg-blue-600 text-white font-bold shadow-sm'
-                : 'text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400'
-            }`}
-          >
-            <Table size={15} />
-            Tạo Đề Ma Trận
-          </button>
-
-          <button
-            onClick={() => setActiveTab('tutor')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-xs font-semibold rounded-xl transition-all ${
-              activeTab === 'tutor'
-                ? 'bg-blue-600 text-white font-bold shadow-sm'
-                : 'text-slate-600 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400'
-            }`}
-          >
-            <GraduationCap size={15} />
-            Giao diện AI
-          </button>
-        </div>
+        {/* Nạp nhanh SGK chỉ hiển thị gọn khi ở tab Đề thi hoặc Ma trận */}
+        {(activeTab === 'exam_full' || activeTab === 'matrix_full') && (
+          <div className="mb-3 max-w-7xl mx-auto">
+            <QuickBookUploadBar
+              currentLessonName={examData.examTitle}
+              currentSubject={examData.subject}
+              currentGrade={examData.grade}
+              onSelectLesson={handleSelectLessonFromBook}
+              onOpenFullModal={() => setIsBookUploadModalOpen(true)}
+            />
+          </div>
         )}
 
-        {/* ACTIVE PORT MODULE */}
-        <div className="relative mt-6">
-          <div className={activeTab === 'pdf' ? 'block animate-fade-in' : 'hidden'}>
-            <PdfConverter apiKey={apiKey} model={preferredModel} />
+        <div className="max-w-7xl mx-auto w-full">
+          {/* TAB 1: ĐỀ THI CHUẨN 4 PHẦN (CV 7991) */}
+          <div className={activeTab === 'exam_full' ? 'block animate-fade-in' : 'hidden'}>
+            <ExamCV7991View 
+              exam={examData} 
+              onUpdateExam={setExamData}
+              onNavigateToMatrix={() => setActiveTab('matrix_full')}
+            />
           </div>
 
+          {/* TAB 2: MA TRẬN & BẢN ĐẶC TẢ ĐỀ THI 10.0Đ */}
+          <div className={activeTab === 'matrix_full' ? 'block animate-fade-in' : 'hidden'}>
+            <MatrixCV7991View 
+              exam={examData} 
+              onUpdateExam={setExamData}
+            />
+          </div>
+
+          {/* TAB 3: SINH ĐỀ AI THEO MA TRẬN (KÈM BBT VÀ ĐỒ THỊ) */}
+          <div className={activeTab === 'cv7991' ? 'block animate-fade-in' : 'hidden'}>
+            <CV7991ExamGenerator apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 4: TẠO ĐỀ TƯƠNG TỰ */}
           <div className={activeTab === 'similar' ? 'block animate-fade-in' : 'hidden'}>
             <SimilarExamGenerator apiKey={apiKey} model={preferredModel} />
           </div>
 
+          {/* TAB 5: BÓC TÁCH OCR SANG LATEX */}
           <div className={activeTab === 'standardize' ? 'block animate-fade-in' : 'hidden'}>
             <StandardizeExamGenerator apiKey={apiKey} model={preferredModel} />
           </div>
 
-          <div className={activeTab === 'matrix' ? 'block animate-fade-in' : 'hidden'}>
-            <MatrixExamGenerator apiKey={apiKey} model={preferredModel} />
+          {/* TAB 6: SỬA LỖI VĂN BẢN & MÃ LATEX */}
+          <div className={activeTab === 'correction' ? 'block animate-fade-in' : 'hidden'}>
+            <TextCorrection apiKey={apiKey} model={preferredModel} />
           </div>
 
-          <div className={activeTab === 'tutor' ? 'block animate-fade-in' : 'hidden'}>
-            <AITutor
-              sessions={appData.sessions}
-              progress={appData.progress}
-            />
+          {/* TAB 7: BẢNG BIẾN THIÊN & ĐỒ THỊ OXY 300 DPI */}
+          <div className={activeTab === 'function_graph' ? 'block animate-fade-in' : 'hidden'}>
+            <FunctionGraphTool apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 8: HÌNH HỌC KHÔNG GIAN 3D & GEOGEBRA */}
+          <div className={activeTab === 'geometry' ? 'block animate-fade-in' : 'hidden'}>
+            <GeometryTool apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 9: KẾ HOẠCH BÀI DẠY (CV 5512) */}
+          <div className={activeTab === 'lesson_plan' ? 'block animate-fade-in' : 'hidden'}>
+            <LessonPlanGenerator apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 10: SƠ ĐỒ TƯ DUY (MINDMAP) */}
+          <div className={activeTab === 'mindmap' ? 'block animate-fade-in' : 'hidden'}>
+            <MindmapGenerator apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 11: ẢNH MINH HỌA GIÁO KHOA SƯ PHẠM */}
+          <div className={activeTab === 'illustration' ? 'block animate-fade-in' : 'hidden'}>
+            <IllustrationGenerator apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 12: MÔ PHỎNG TƯƠNG TÁC */}
+          <div className={activeTab === 'simulation' ? 'block animate-fade-in' : 'hidden'}>
+            <SimulationGenerator apiKey={apiKey} model={preferredModel} />
+          </div>
+
+          {/* TAB 13: HƯỚNG DẪN SỬ DỤNG */}
+          <div className={activeTab === 'guide' ? 'block animate-fade-in' : 'hidden'}>
+            <UserGuide />
           </div>
         </div>
+
       </main>
 
-      {/* SETTINGS MODAL */}
+      {/* MODAL NẠP SÁCH GIÁO KHOA TOÀN DIỆN */}
+      <BookUploadModal
+        isOpen={isBookUploadModalOpen}
+        onClose={() => setIsBookUploadModalOpen(false)}
+        onSelectLesson={handleSelectLessonFromBook}
+      />
+
+      {/* MODAL CẤU HÌNH API KEY (GEMINI 3 PRO / 3 FLASH / 2.5 FLASH AUTO-FALLBACK) */}
       {showSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-700 max-w-md w-full p-6 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-700 max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <Settings size={18} className="text-blue-500" />
-                Cấu hình API Key & Model AI
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <Settings size={16} className="text-teal-600" />
+                Cấu hình Gemini AI & Mô hình Tự Động Fallback
               </h3>
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-sm font-semibold"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold"
               >
                 ✕
               </button>
@@ -535,19 +426,19 @@ export default function App() {
         </div>
       )}
 
-      {/* MANDATORY API KEY REQUIRED MODAL */}
+      {/* MODAL YÊU CẦU NHẬP API KEY KHI MỚI MỞ */}
       {showKeyRequiredModal && !showSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 max-w-md w-full p-6 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 max-w-md w-full p-6 space-y-4">
             <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-blue-50 dark:bg-slate-700 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
-                <Sparkles size={32} className="animate-pulse" />
+              <div className="w-14 h-14 bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <Sparkles size={28} className="animate-pulse" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100">
-                Chào mừng bạn đến với Trợ lý Toán học AI!
+              <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+                Chào mừng Quý Thầy/Cô đến với Hệ Thống Tạo Đề CV 7991!
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
-                Để sử dụng các tính năng trợ lý thông minh (sinh câu hỏi, lập lộ trình ôn tập cá nhân), vui lòng cấu hình khóa API Gemini của bạn.
+                Hệ thống hỗ trợ cơ chế Auto-Fallback tự động chuyển đổi thông minh giữa Gemini 3 Pro, Gemini 3 Flash và Gemini 2.5 Flash, đảm bảo luôn vận hành mượt mà.
               </p>
             </div>
 

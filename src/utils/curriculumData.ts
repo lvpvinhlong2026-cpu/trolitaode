@@ -116,5 +116,14 @@ export const KNTT_CURRICULUM: Record<string, Record<string, string[]>> = {
     'Lớp 10': ['Bài 1: Công nghệ', 'Bài 2: Hệ thống kĩ thuật', 'Bài 3: Đổi mới công nghệ', 'Bài 4: Thiết kế kĩ thuật', 'Bài 5: Bản vẽ kĩ thuật', 'Bài 6: Vật liệu kĩ thuật', 'Bài 7: Dụng cụ gia công', 'Bài 8: Sản xuất cơ khí'],
     'Lớp 11': ['Bài 1: Vẽ kĩ thuật', 'Bài 2: Bản vẽ chi tiết', 'Bài 3: Bản vẽ lắp', 'Bài 4: Bản vẽ nhà', 'Bài 5: Vật liệu cơ khí', 'Bài 6: Gia công cơ khí', 'Bài 7: Cơ cấu truyền động', 'Bài 8: Động cơ đốt trong'],
     'Lớp 12': ['Bài 1: Mạch điện', 'Bài 2: Linh kiện điện tử', 'Bài 3: Mạch khuếch đại', 'Bài 4: Mạch tạo xung', 'Bài 5: Vi điều khiển', 'Bài 6: Mạng điện sản xuất', 'Bài 7: Mạng điện trong nhà']
+  },
+  'Tiếng Anh': {
+    'Lớp 6': ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5', 'Unit 6', 'Unit 7', 'Unit 8', 'Unit 9', 'Unit 10', 'Unit 11', 'Unit 12'],
+    'Lớp 7': ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5', 'Unit 6', 'Unit 7', 'Unit 8', 'Unit 9', 'Unit 10', 'Unit 11', 'Unit 12'],
+    'Lớp 8': ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5', 'Unit 6', 'Unit 7', 'Unit 8', 'Unit 9', 'Unit 10', 'Unit 11', 'Unit 12'],
+    'Lớp 9': ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5', 'Unit 6', 'Unit 7', 'Unit 8', 'Unit 9', 'Unit 10', 'Unit 11', 'Unit 12'],
+    'Lớp 10': ['Unit 1: Family Life', 'Unit 2: Humans And The Environment', 'Unit 3: Music', 'Unit 4: For A Better Community', 'Unit 5: Inventions', 'Unit 6: Gender Equality', 'Unit 7: Viet Nam And International Organisations', 'Unit 8: New Ways To Learn', 'Unit 9: Protecting The Environment', 'Unit 10: Ecotourism'],
+    'Lớp 11': ['Unit 1: A long and healthy life', 'Unit 2: The generation gap', 'Unit 3: Cities of the future', 'Unit 4: ASEAN and Viet Nam', 'Unit 5: Global warming', 'Unit 6: Preserving our heritage', 'Unit 7: Education options for school-leavers', 'Unit 8: Becoming independent', 'Unit 9: Social issues', 'Unit 10: The ecosystem'],
+    'Lớp 12': ['Unit 1: Life stories we admire', 'Unit 2: A multicultural world', 'Unit 3: Green living', 'Unit 4: Urbanisation', 'Unit 5: The world of work', 'Unit 6: Artificial intelligence', 'Unit 7: The world of mass media', 'Unit 8: Wildlife conservation', 'Unit 9: Career paths', 'Unit 10: Lifelong learning']
   }
 };

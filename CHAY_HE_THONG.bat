@@ -1,43 +1,85 @@
 @echo off
-title HE THONG TAO DE KTTX
-echo ========================================================
-echo       HE THONG TAO DE KIEM TRA THUONG XUYEN (AI)
-echo ========================================================
-echo.
-echo Dang kiem tra moi truong...
+title TAO DE KIEM TRA CV 7991 - BGD VA DT
+cd /d "%~dp0"
 
-node -v >nul 2>&1
-IF %ERRORLEVEL% NEQ 0 (
-    echo [LOI] He thong khong tim thay Node.js.
-    echo Vui long tai va cai dat Node.js tu https://nodejs.org/
-    echo Sau khi cai dat xong, hay mo lai file nay.
-    pause
-    exit /b
+echo ====================================================================
+echo        HE THONG TAO DE KIEM TRA CHUAN CONG VAN 7991 (BGD VA DT)
+echo     Ma Tran, Dac Ta, Tron 4 Ma De, Thi Thu Online, Do Thi 300 DPI
+echo                   Tac gia: GV Le Vinh Phuc (0944405124)
+echo ====================================================================
+echo.
+
+:: 1. Nap duong dan moi truong Bun, Node, NPM
+set "PATH=%LOCALAPPDATA%\Microsoft\WinGet\Packages\Oven-sh.Bun_Microsoft.Winget.Source_8wekyb3d8bbwe\bun-windows-x64;%USERPROFILE%\.bun\bin;C:\Program Files\nodejs;%APPDATA%\npm;%LOCALAPPDATA%\Microsoft\WindowsApps;%PATH%"
+
+:: 2. Kiem tra Bun hoac Node
+set "RUNNER="
+where bun >nul 2>nul
+if %errorlevel% equ 0 (
+    set "RUNNER=bun"
+) else (
+    where node >nul 2>nul
+    if %errorlevel% equ 0 (
+        set "RUNNER=node"
+    )
 )
 
-IF NOT EXIST "node_modules\" (
+if "%RUNNER%"=="" (
+    echo [!] Chua tim thay Bun hoac Node.js.
+    echo [*] Dang tien hanh cai dat Bun tu dong qua WinGet...
+    winget install Oven-sh.Bun --accept-source-agreements --accept-package-agreements
+    set "PATH=%LOCALAPPDATA%\Microsoft\WinGet\Packages\Oven-sh.Bun_Microsoft.Winget.Source_8wekyb3d8bbwe\bun-windows-x64;%PATH%"
+    where bun >nul 2>nul
+    if %errorlevel% equ 0 (
+        set "RUNNER=bun"
+    ) else (
+        echo [X] Khong the khoi dong. Vui long cai dat Node.js tu https://nodejs.org/
+        pause
+        exit /b 1
+    )
+)
+
+:: 3. Kiem tra file cau hinh moi truong
+if not exist ".env" (
+    if exist ".env.example" (
+        copy /y ".env.example" ".env" >nul
+    ) else (
+        echo GEMINI_API_KEY="" > .env
+        echo PORT=3001 >> .env
+    )
+)
+
+:: 4. Kiem tra thu vien node_modules
+if not exist "node_modules\" (
+    echo [*] Dang cai dat thu vien cho lan dau su dung...
+    if "%RUNNER%"=="bun" (
+        bun install
+    ) else (
+        npm install
+    )
+)
+
+:: 5. Tu dong mo trinh duyet tai cong 3001 sau 2 giay
+start "" powershell -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://localhost:3001'"
+
+echo ====================================================================
+echo   HE THONG TAO DE CV 7991 DA SAN SANG!
+echo   - May chu: http://localhost:3001
+echo   - Trinh duyet web se tu dong mo trong 2 giay...
+echo   - De dung he thong: Dong cua so nay hoac nhan Ctrl + C
+echo ====================================================================
+echo.
+
+:: 6. Khoi chay may chu tren port 3001
+set PORT=3001
+if "%RUNNER%"=="bun" (
+    bun server.ts
+) else (
+    npm run dev
+)
+
+if %errorlevel% neq 0 (
     echo.
-    echo [THONG BAO] Chay lan dau tien, dang cai dat cac thanh phan can thiet...
-    echo Qua trinh nay co the mat 1-2 phut tuy toc do mang, vui long khong tat cua so.
-    call npm install
-    echo Cai dat hoan tat!
+    echo [!] May chu da dung hoac co loi.
+    pause
 )
-
-echo.
-echo [THANH CONG] Dang khoi dong he thong...
-echo Trinh duyet se tu dong mo len trong vai giay toi.
-echo.
-echo ========================================================
-echo LUU Y QUAN TRONG:
-echo - Hay thu nho (minimize) cua so nay xuong.
-echo - KHONG tat cua so mau den nay khi dang su dung phan mem!
-echo ========================================================
-echo.
-
-REM Len lich tu dong mo trinh duyet sau 4 giay
-start cmd /c "timeout /t 4 /nobreak > nul & start http://localhost:3000"
-
-REM Khoi chay server ngay trong cua so hien tai
-call npm run dev
-
-pause
