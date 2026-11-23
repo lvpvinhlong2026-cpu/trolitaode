@@ -25,6 +25,7 @@ import {
 import { renderGraphToCanvas, GraphConfig } from './functionGraphEngine';
 import { renderBBTToCanvas, analyzeFromCoeffs } from './bbtEngine';
 import { renderGeometry3DToCanvas, Geometry3DConfig } from './geometry3dEngine';
+import { cropCanvasToContent } from './dpiUtils';
 
 // =========================================================================
 // 1. BẢNG KÝ HIỆU TOÁN HỌC UNICODE CHUẨN OFFICE MATH
@@ -279,7 +280,8 @@ export function generateAutoDiagramForPlaceholder(description: string): Uint8Arr
         analyzed = analyzeFromCoeffs('cubic', 1, 0, -3, 0); // y = x^3 - 3x
       }
       renderBBTToCanvas(analyzed, c, 2.4, { fontSizeScale: 1.0 });
-      return dataUrlToBytes(c.toDataURL('image/png'));
+      const cropped = cropCanvasToContent(c, 6);
+      return dataUrlToBytes(cropped.toDataURL('image/png'));
     }
 
     // 2. Đồ thị hàm số Oxy
@@ -314,7 +316,8 @@ export function generateAutoDiagramForPlaceholder(description: string): Uint8Arr
       }
 
       renderGraphToCanvas(graphCfg, c, 2.4, { fontSizeScale: 1.0 });
-      return dataUrlToBytes(c.toDataURL('image/png'));
+      const cropped = cropCanvasToContent(c, 6);
+      return dataUrlToBytes(cropped.toDataURL('image/png'));
     }
 
     // 3. Hình học không gian 3D
@@ -327,7 +330,8 @@ export function generateAutoDiagramForPlaceholder(description: string): Uint8Arr
         showDiagonals: false
       };
       renderGeometry3DToCanvas(geoCfg, c, 2.4);
-      return dataUrlToBytes(c.toDataURL('image/png'));
+      const cropped = cropCanvasToContent(c, 6);
+      return dataUrlToBytes(cropped.toDataURL('image/png'));
     }
   } catch (err) {
     console.warn('Lỗi tự động sinh hình mẫu cho placeholder:', err);

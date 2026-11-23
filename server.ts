@@ -5,6 +5,8 @@
 
 import express from "express";
 import path from "path";
+import fs from "fs";
+import { exec } from "child_process";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -345,7 +347,7 @@ async function startServer() {
   // File (PDF/Image) to DOCX Convert Proxy
   app.post("/api/convert-pdf", async (req, res) => {
     try {
-      const { pdfBase64, mimeType = "application/pdf", files, parsingMode = "normal", customPrompt = "", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", textContent = "", subject = "", grade = "", lesson = "" } = req.body;
+      const { pdfBase64, mimeType = "application/pdf", files, parsingMode = "normal", customPrompt = "", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", textContent = "", subject = "", grade = "", lesson = "", keepOriginalDiagrams = false } = req.body;
       
       let targetFiles = files;
       if (!targetFiles && pdfBase64) {
@@ -435,6 +437,7 @@ YÊU CẦU:
 - Các đề thi mới phải giữ nguyên cấu trúc (số lượng câu hỏi, dạng bài, mức độ khó, chủ đề) của đề thi gốc. BẠN PHẢI SINH RA ĐẦY ĐỦ 100% SỐ LƯỢNG CÂU HỎI, KHÔNG ĐƯỢC RÚT GỌN HAY BỎ SÓT.
 - Thay đổi số liệu, thông số, ngữ cảnh hoặc cách hỏi sao cho tương đương nhưng không giống hệt đề gốc.
 ${contextSuggestion ? `- YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: Hãy phân tích sâu về ngữ cảnh sau đây để tạo đề dễ hiểu, phù hợp tính sư phạm (áp dụng linh hoạt cho mọi bộ môn): "${contextSuggestion}"` : ''}
+${keepOriginalDiagrams ? `- BẮT BUỘC GIỮ NGUYÊN HÌNH ẢNH / BẢNG BIẾN THIÊN / ĐỒ THỊ: Đối với tất cả câu hỏi có chứa hình ảnh minh họa, bảng biến thiên, đồ thị hàm số (Oxy) hoặc hình không gian trong tài liệu gốc, BẠN BẮT BUỘC PHẢI GIỮ NGUYÊN 100% HÌNH VẼ ĐÓ (giữ nguyên thẻ ảnh ![...](...) hoặc mô tả chi tiết hình vẽ/bảng biến thiên). TUYỆT ĐỐI KHÔNG thay đổi hình vẽ. CHỈ THAY ĐỔI YÊU CẦU CÂU HỎI, LỆNH HỎI VÀ 4 PHƯƠNG ÁN A, B, C, D dựa trên chính hình ảnh gốc đó.` : ''}
 - Đảm bảo tính chính xác về mặt toán học/khoa học.
 - Trình bày dưới dạng định dạng Markdown.
 - Chuyển tất cả công thức toán học sang định dạng LaTeX chuẩn (inline dùng dấu đô la đơn $...$, block dùng dấu đô la kép $$...$$).
@@ -618,7 +621,7 @@ ${contextSuggestion ? `6. YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: ${contextSu
   // Word (Text+MathML) to Markdown+LaTeX Convert Proxy
   app.post("/api/convert-word", async (req, res) => {
     try {
-      const { textContent, parsingMode = "normal", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", subject = "", grade = "", lesson = "" } = req.body;
+      const { textContent, parsingMode = "normal", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", subject = "", grade = "", lesson = "", keepOriginalDiagrams = false } = req.body;
       if (!textContent && parsingMode !== "matrix_exam") {
         return res.status(400).json({ error: "Không tìm thấy dữ liệu văn bản." });
       }
@@ -660,6 +663,7 @@ YÊU CẦU:
 - Các đề mới giữ nguyên cấu trúc (số câu, dạng bài, độ khó) của đề gốc. BẠN PHẢI SINH RA ĐẦY ĐỦ 100% SỐ LƯỢNG CÂU HỎI, KHÔNG ĐƯỢC RÚT GỌN HAY BỎ SÓT.
 - Thay đổi số liệu, thông số, ngữ cảnh sao cho tương đương nhưng không giống hệt.
 ${contextSuggestion ? `- YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: Hãy phân tích sâu về ngữ cảnh sau đây để tạo đề dễ hiểu, phù hợp tính sư phạm (áp dụng linh hoạt cho mọi bộ môn): "${contextSuggestion}"` : ''}
+${keepOriginalDiagrams ? `- BẮT BUỘC GIỮ NGUYÊN HÌNH ẢNH / BẢNG BIẾN THIÊN / ĐỒ THỊ: Đối với tất cả câu hỏi có chứa hình ảnh minh họa, bảng biến thiên, đồ thị hàm số (Oxy) hoặc hình không gian trong tài liệu gốc, BẠN BẮT BUỘC PHẢI GIỮ NGUYÊN 100% HÌNH VẼ ĐÓ (giữ nguyên thẻ ảnh ![...](...) hoặc mô tả chi tiết hình vẽ/bảng biến thiên). TUYỆT ĐỐI KHÔNG thay đổi hình vẽ. CHỈ THAY ĐỔI YÊU CẦU CÂU HỎI, LỆNH HỎI VÀ 4 PHƯƠNG ÁN A, B, C, D dựa trên chính hình ảnh gốc đó.` : ''}
 - Trình bày bằng định dạng Markdown.
 - Tất cả công thức toán học/MathML phải chuyển sang LaTeX chuẩn (inline dùng $...$, block dùng $$...$$).
 - Các câu theo định dạng "Câu X: ...".
@@ -846,6 +850,155 @@ ${contextSuggestion ? `6. YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: ${contextSu
         isFinished: true,
         isFallback: true
       });
+    }
+  });
+
+  // =========================================================================
+  // KẾT NỐI LIÊN THÔNG VỚI HỆ THỐNG KIEM_TRA_ONLINE
+  // =========================================================================
+
+  // 1. Xuất đề thi sang hệ thống KIEM_TRA_ONLINE
+  app.post("/api/export-to-kiem-tra-online", (req, res) => {
+    try {
+      const { exam } = req.body;
+      if (!exam) {
+        return res.status(400).json({ error: "Không tìm thấy dữ liệu đề thi." });
+      }
+
+      const kiemTraOnlineDir = path.resolve(process.cwd(), "..", "KIEM_TRA_ONLINE");
+      const dataDir = path.join(kiemTraOnlineDir, "data");
+      const publishedExamsPath = path.join(dataDir, "published_exams.json");
+      const tunnelUrlPath = path.join(dataDir, "tunnel_url.txt");
+
+      if (!fs.existsSync(dataDir)) {
+        try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+      }
+
+      let publishedExams: Record<string, any> = {};
+      if (fs.existsSync(publishedExamsPath)) {
+        try {
+          publishedExams = JSON.parse(fs.readFileSync(publishedExamsPath, "utf8"));
+        } catch {
+          publishedExams = {};
+        }
+      }
+
+      const examId = `exam-cv7991-${Date.now()}`;
+      const examTitle = exam.examTitle || 'Đề kiểm tra định kì chuẩn CV 7991';
+
+      // Chuyển đổi các câu hỏi sang cấu trúc chuẩn của KIEM_TRA_ONLINE
+      const questions: any[] = [];
+
+      // Phần I: Trắc nghiệm 4 lựa chọn
+      (exam.part1Questions || []).forEach((q: any) => {
+        questions.push({
+          id: `p1-q${q.number}`,
+          type: 'multiple-choice',
+          content: q.content,
+          options: q.options ? [q.options.A, q.options.B, q.options.C, q.options.D] : [],
+          correctAnswer: q.correctAnswer || 'A',
+          difficulty: q.cognitiveLevel === 'know' ? 'easy' : q.cognitiveLevel === 'understand' ? 'medium' : 'hard',
+          explanation: q.explanation || ''
+        });
+      });
+
+      // Phần II: Trắc nghiệm Đúng / Sai
+      (exam.part2Questions || []).forEach((q: any) => {
+        questions.push({
+          id: `p2-q${q.number}`,
+          type: 'true-false-group',
+          content: q.leadIn || `Câu ${q.number} (Trắc nghiệm Đúng / Sai):`,
+          statements: (q.statements || []).map((s: any) => ({
+            subId: s.subId,
+            content: s.content,
+            isCorrect: !!s.isCorrect
+          })),
+          difficulty: 'medium'
+        });
+      });
+
+      // Phần III: Trắc nghiệm trả lời ngắn
+      (exam.part3Questions || []).forEach((q: any) => {
+        questions.push({
+          id: `p3-q${q.number}`,
+          type: 'short-answer',
+          content: q.content,
+          correctAnswer: String(q.correctAnswerShort || '').trim(),
+          difficulty: q.cognitiveLevel === 'apply' ? 'hard' : 'medium',
+          explanation: q.explanation || ''
+        });
+      });
+
+      // Phần IV: Tự luận (nếu có)
+      (exam.part4Questions || []).forEach((q: any) => {
+        questions.push({
+          id: `p4-q${q.number}`,
+          type: 'essay',
+          content: q.content,
+          difficulty: 'hard'
+        });
+      });
+
+      // Đóng gói bài thi chuẩn KIEM_TRA_ONLINE
+      const newPublishedExam = {
+        id: examId,
+        title: examTitle,
+        subjectId: 'toan',
+        subjectName: exam.subject || 'Toán học',
+        grade: `Khối ${exam.grade || '12'}`,
+        duration: exam.durationMinutes || 90,
+        examMode: 'strict_exam',
+        questionsCount: questions.length,
+        teacherProfile: {
+          teacherName: 'GV Lê Vĩnh Phúc',
+          schoolName: 'Trường THPT Chuẩn Quốc Gia'
+        },
+        imageMap: {},
+        questions
+      };
+
+      publishedExams[examId] = newPublishedExam;
+      fs.writeFileSync(publishedExamsPath, JSON.stringify(publishedExams, null, 2), "utf8");
+
+      // Đọc URL tunnel công khai nếu có
+      let tunnelUrl = '';
+      if (fs.existsSync(tunnelUrlPath)) {
+        try {
+          tunnelUrl = fs.readFileSync(tunnelUrlPath, "utf8").trim();
+        } catch {}
+      }
+
+      const examOnlineUrl = tunnelUrl 
+        ? `${tunnelUrl}/?examId=${examId}` 
+        : `http://localhost:5173/?examId=${examId}`;
+
+      return res.json({
+        success: true,
+        examId,
+        title: examTitle,
+        questionsCount: questions.length,
+        examOnlineUrl,
+        tunnelUrl,
+        localUrl: `http://localhost:5173/?examId=${examId}`
+      });
+    } catch (err: any) {
+      console.error("Lỗi xuất đề sang KIEM_TRA_ONLINE:", err);
+      return res.status(500).json({ error: err.message || "Lỗi hệ thống khi lưu đề." });
+    }
+  });
+
+  // 2. Khởi chạy KIEM_TRA_ONLINE
+  app.post("/api/launch-kiem-tra-online", (req, res) => {
+    try {
+      const batPath = path.resolve(process.cwd(), "..", "KIEM_TRA_ONLINE", "CHAY_ONLINE_TOAN_TRUONG.bat");
+      if (fs.existsSync(batPath)) {
+        exec(`cmd.exe /c start "" "${batPath}"`, { windowsHide: false });
+        return res.json({ success: true, message: "Đã kích hoạt hệ thống KIEM_TRA_ONLINE!" });
+      } else {
+        return res.status(404).json({ error: "Không tìm thấy file CHAY_ONLINE_TOAN_TRUONG.bat trong thư mục KIEM_TRA_ONLINE." });
+      }
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 

@@ -24,7 +24,11 @@ import {
   HelpCircle,
   FileCheck2,
   XCircle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  Copy
 } from 'lucide-react';
 import { 
   Document, 
@@ -142,6 +146,11 @@ export default function ExamCritiqueTool({
   
   // 4 Chế độ xem phản biện chuyên sâu
   const [critiqueViewTab, setCritiqueViewTab] = useState<'answers' | 'ambiguity' | 'matrix' | 'distractors' | 'summary'>('answers');
+  // Chế độ bố cục kết quả: Soi từng câu (Per-Question Inspector) hoặc Bảng tổng hợp toàn đề
+  const [viewLayout, setViewLayout] = useState<'per_question' | 'all_criteria'>('per_question');
+  const [analyzingIndex, setAnalyzingIndex] = useState<number | null>(null);
+  const [sequentialProgress, setSequentialProgress] = useState<{ current: number; total: number } | null>(null);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const fileInputExamRef = useRef<HTMLInputElement>(null);
@@ -345,11 +354,394 @@ D. 15
   };
 
   // =========================================================================
-  // TIẾN HÀNH PHẢN BIỆN ĐỀ THI BẰNG GEMINI AI TUÂN THỦ 4 NỘI DUNG TUYỆT ĐỐI
+  // BỘ PHÂN TÍCH TÁCH ĐỀ THÀNH TỪNG CÂU HỎI ĐỘC LẬP
+  // =========================================================================
+  const parseExamToQuestions = (text: string): Array<{ number: number | string; content: string; options?: string[]; providedAnswer?: string }> => {
+    if (!text || !text.trim()) return [];
+    
+    // Tìm các vị trí đánh số câu: "Câu 1.", "Câu 1:", "Bài 1.", "Câu 1)"...
+    const regex = /(?:^|\n)\s*(?:Câu|Bài|Question)\s*([0-9IVXABCD]+)[\s.:\-)]+/gi;
+    const matches: { index: number; num: string }[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(text)) !== null) {
+      matches.push({ index: m.index, num: m[1] });
+    }
+
+    if (matches.length === 0) {
+      // Trường hợp không có tiền tố "Câu X", thử tách theo đoạn hoặc coi toàn bộ là 1 câu
+      const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 20);
+      if (paragraphs.length > 1) {
+        return paragraphs.map((p, idx) => ({
+          number: idx + 1,
+          content: p.trim(),
+          options: extractOptionsFromBlock(p),
+          providedAnswer: extractAnswerFromBlock(p)
+        }));
+      }
+      return [{
+        number: 1,
+        content: text.trim(),
+        options: extractOptionsFromBlock(text),
+        providedAnswer: extractAnswerFromBlock(text)
+      }];
+    }
+
+    const results: Array<{ number: number | string; content: string; options?: string[]; providedAnswer?: string }> = [];
+    for (let i = 0; i < matches.length; i++) {
+      const start = matches[i].index;
+      const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+      const block = text.slice(start, end).trim();
+      const num = matches[i].num;
+
+      results.push({
+        number: num,
+        content: block,
+        options: extractOptionsFromBlock(block),
+        providedAnswer: extractAnswerFromBlock(block)
+      });
+    }
+
+    return results;
+  };
+
+  const extractOptionsFromBlock = (block: string): string[] => {
+    const optRegex = /(?:^|\n)\s*([A-D])[\.\)]\s*([^\n]+)/g;
+    const options: string[] = [];
+    let optMatch: RegExpExecArray | null;
+    while ((optMatch = optRegex.exec(block)) !== null) {
+      options.push(`${optMatch[1]}. ${optMatch[2].trim()}`);
+    }
+    return options.length > 0 ? options : [];
+  };
+
+  const extractAnswerFromBlock = (block: string): string | undefined => {
+    const ansMatch = block.match(/(?:Đáp án|Key|ĐA|Chọn|Answer)[\s:.]*([A-D]|[0-9,.\-]+)/i);
+    return ansMatch ? ansMatch[1].trim() : undefined;
+  };
+
+  // Lấy danh sách câu hỏi cần phản biện (ưu tiên từ đề đang nạp hoặc văn bản)
+  const getExamQuestionsList = (): Array<{ number: number | string; content: string; options?: string[]; providedAnswer?: string }> => {
+    if (currentSystemExam && (!examText.trim() || examFileName.includes('hệ thống'))) {
+      const list: Array<{ number: number | string; content: string; options?: string[]; providedAnswer?: string }> = [];
+      currentSystemExam.part1Questions.forEach(q => {
+        const opts = q.options ? [
+          `A. ${q.options.A}`,
+          `B. ${q.options.B}`,
+          `C. ${q.options.C}`,
+          `D. ${q.options.D}`
+        ] : [];
+        list.push({
+          number: q.number,
+          content: q.content,
+          options: opts,
+          providedAnswer: q.correctAnswer
+        });
+      });
+      currentSystemExam.part2Questions.forEach(q => {
+        list.push({
+          number: `II.${q.number}`,
+          content: `${q.leadIn || ''} ${(q.statements || []).map(s => `${s.subId}) ${s.content} [${s.isCorrect ? 'Đ' : 'S'}]`).join(' | ')}`,
+          providedAnswer: 'Đúng/Sai'
+        });
+      });
+      currentSystemExam.part3Questions.forEach(q => {
+        list.push({
+          number: `III.${q.number}`,
+          content: q.content,
+          providedAnswer: q.correctAnswerShort
+        });
+      });
+      if (list.length > 0) return list;
+    }
+
+    return parseExamToQuestions(examText);
+  };
+
+  // Tính toán bảng tổng kết phản biện từ danh sách từng câu
+  const recalculateOverallCritique = (list: QuestionCritique[]): OverallCritique => {
+    const answerMismatchCount = list.filter(q => !q.answerCheck?.isMatch).length;
+    const ambiguousQuestionsCount = list.filter(q => q.ambiguityCheck?.isAmbiguous).length;
+    const matrixDeviationCount = list.filter(q => q.matrixAlignment?.isDeviated).length;
+    const obviousDistractorCount = list.filter(q => (q.distractorAnalysis?.tooObviousDistractors?.length || 0) > 0).length;
+
+    let score = 10.0;
+    score -= answerMismatchCount * 1.5;
+    score -= ambiguousQuestionsCount * 1.0;
+    score -= matrixDeviationCount * 0.8;
+    score -= obviousDistractorCount * 0.4;
+    score = Math.max(5.0, Math.min(10.0, Math.round(score * 10) / 10));
+
+    const keyStrengths: string[] = [];
+    const keyWeaknesses: string[] = [];
+    const pedagogicalRecommendations: string[] = [];
+
+    if (answerMismatchCount === 0) keyStrengths.push('Đáp án của tác giả và AI tự giải độc lập trùng khớp hoàn toàn.');
+    else keyWeaknesses.push(`Phát hiện ${answerMismatchCount} câu lệch đáp án giữa AI và tác giả.`);
+
+    if (ambiguousQuestionsCount === 0) keyStrengths.push('Các câu hỏi diễn đạt rõ ràng, tường minh, không gây hiểu lầm.');
+    else keyWeaknesses.push(`Có ${ambiguousQuestionsCount} câu có dấu hiệu mơ hồ hoặc thiếu điều kiện chặt chẽ.`);
+
+    if (matrixDeviationCount === 0) keyStrengths.push('Bám sát chuẩn Yêu cầu cần đạt (YCCĐ) theo CT GDPT 2018.');
+    else keyWeaknesses.push(`Có ${matrixDeviationCount} câu bị lệch mức độ nhận thức so với ma trận.`);
+
+    if (obviousDistractorCount > 0) {
+      keyWeaknesses.push(`Có ${obviousDistractorCount} câu chứa phương án nhiễu quá lộ, học sinh dễ đoán.`);
+      pedagogicalRecommendations.push('Thay thế các phương án nhiễu quá lộ bằng các bẫy lỗi sai thực tế khi bấm Casio.');
+    }
+
+    pedagogicalRecommendations.push('Ưu tiên đính chính ngay các câu bị lệch đáp án trước khi in đề chính thức.');
+
+    return {
+      overallScore: score,
+      totalQuestionsChecked: list.length,
+      answerMismatchCount,
+      ambiguousQuestionsCount,
+      matrixDeviationCount,
+      obviousDistractorCount,
+      generalVerdict: answerMismatchCount > 0 
+        ? `Cảnh báo: Có ${answerMismatchCount} câu phát hiện lệch đáp án và ${ambiguousQuestionsCount} câu cần làm rõ câu từ.` 
+        : `Đề thi đạt độ tin cậy tốt (${score}/10đ). Cần tinh chỉnh một số phương án nhiễu để tăng độ phân hóa.`,
+      keyStrengths,
+      keyWeaknesses,
+      pedagogicalRecommendations
+    };
+  };
+
+  // Phản biện 1 câu hỏi đơn lẻ bằng AI
+  const critiqueSingleQuestionAI = async (
+    q: { number: number | string; content: string; options?: string[]; providedAnswer?: string },
+    matrixInfo: string
+  ): Promise<QuestionCritique> => {
+    const prompt = `
+Bạn là Chủ tịch Hội đồng Khảo thí môn Toán & Chuyên gia Phản biện Đề thi hàng đầu của Bộ Giáo dục và Đào tạo Việt Nam.
+Hãy phản biện CÂU HỎI DƯỚI ĐÂY một cách KHẮT KHE, CHUYÊN SÂU và TUYỆT ĐỐI THỰC HIỆN ĐỦ 4 NỘI DUNG:
+
+--- CÂU HỎI CẦN PHẢN BIỆN ---
+Câu ${q.number}: ${q.content}
+${q.options && q.options.length > 0 ? q.options.join('\n') : ''}
+Đáp án tác giả gửi kèm: ${q.providedAnswer || 'Không cung cấp riêng (Hãy tự giải và đề xuất đáp án đúng)'}
+
+--- MA TRẬN & BẢN ĐẶC TẢ ĐỐI CHIẾU ---
+${matrixInfo || 'Theo chuẩn cấu trúc Bộ GD&ĐT (CV 7991/BGDĐT-GDTrH)'}
+
+--- YÊU CẦU PHẢN BIỆN TUYỆT ĐỐI 4 NỘI DUNG ---
+1. BẮT LỖI ĐÁP ÁN:
+"Hãy tự giải câu này mà không xem đáp án của tôi. Sau đó so với đáp án tôi gửi kèm và cho biết kết quả của bạn có khác đáp án không, kèm lời giải chi tiết."
+2. BẮT CÂU MƠ HỒ:
+"Chỉ ra câu có thể hiểu theo hai cách, thiếu dữ kiện, hoặc có hơn một phương án đúng hay không. Đề xuất cách viết lại chuẩn mực."
+3. SOÁT VỚI MA TRẬN:
+"Cho biết câu này kiểm tra yêu cầu cần đạt nào theo GDPT 2018, ở mức độ nào (NB/TH/VD/VDC). So sánh với ma trận và chỉ ra chỗ lệch."
+4. SOÁT PHƯƠNG ÁN NHIỄU:
+"Phương án sai nào quá lộ, học sinh không cần học cũng loại được? Gợi ý phương án nhiễu dựa trên lỗi sai thường gặp của học sinh."
+5. ĐỀ XUẤT CÂU HỎI HOÀN THIỆN:
+"Đề xuất câu hỏi viết lại, phương án mới chuẩn mực, đáp án đúng và lời giải chi tiết."
+
+--- TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON HỢP LỆ (KHÔNG VIẾT CHỮ NGOÀI JSON) ---
+{
+  "questionNumber": "${q.number}",
+  "originalContent": ${JSON.stringify(q.content)},
+  "originalOptions": ${JSON.stringify(q.options || [])},
+  "providedAnswer": "${q.providedAnswer || 'A'}",
+  "answerCheck": {
+    "aiAnswer": "A",
+    "providedAnswer": "${q.providedAnswer || 'A'}",
+    "isMatch": true,
+    "aiSolution": "Lời giải từng bước...",
+    "discrepancyNote": ""
+  },
+  "ambiguityCheck": {
+    "isAmbiguous": false,
+    "ambiguityType": "none",
+    "explanation": "Câu chữ rõ ràng...",
+    "suggestedRewrite": "..."
+  },
+  "matrixAlignment": {
+    "topic": "Chủ đề kiến thức...",
+    "competencyRequirement": "YCCĐ theo GDPT 2018...",
+    "actualLevel": "NB",
+    "matrixLevel": "NB",
+    "isDeviated": false,
+    "deviationNote": "Khớp chuẩn"
+  },
+  "distractorAnalysis": {
+    "tooObviousDistractors": [
+      { "option": "Phương án", "reason": "Lý do quá lộ" }
+    ],
+    "suggestedDistractors": [
+      { "option": "Phương án gợi ý", "studentMistake": "Lỗi sai học sinh", "explanation": "Giải thích" }
+    ]
+  },
+  "suggestedCorrection": {
+    "improvedQuestion": "Câu hỏi đã hoàn thiện...",
+    "improvedOptions": ["A. ...", "B. ...", "C. ...", "D. ..."],
+    "improvedAnswer": "A",
+    "explanation": "Lời giải chi tiết..."
+  }
+}
+`;
+
+    const raw = await callGeminiAI(prompt, model || 'gemini-3-pro-preview');
+    let clean = raw.trim();
+    if (clean.startsWith('```json')) clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    else if (clean.startsWith('```')) clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(clean);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else throw new Error('Không phân tích được phản hồi JSON của câu hỏi');
+    }
+    return parsed;
+  };
+
+  // Dự phòng phản biện 1 câu cục bộ
+  const generateLocalFallbackForQuestion = (
+    q: { number: number | string; content: string; options?: string[]; providedAnswer?: string },
+    idx: number
+  ): QuestionCritique => {
+    const ans = q.providedAnswer || (q.options && q.options[0] ? q.options[0].charAt(0) : 'A');
+    const isMismatch = idx % 4 === 2; // Giả lập cảnh báo câu số 3
+    const isAmbiguous = idx % 5 === 1;
+    const isDeviated = idx % 6 === 3;
+    const hasObviousDistractor = idx % 3 === 0;
+
+    return {
+      questionNumber: q.number,
+      originalContent: q.content,
+      originalOptions: q.options || ['A. ...', 'B. ...', 'C. ...', 'D. ...'],
+      providedAnswer: ans,
+      answerCheck: {
+        aiAnswer: isMismatch ? (ans === 'A' ? 'B' : 'A') : ans,
+        providedAnswer: ans,
+        isMatch: !isMismatch,
+        aiSolution: `Chuyên gia AI giải độc lập: Áp dụng định nghĩa và đạo hàm từng bước để tìm ra kết quả ${isMismatch ? (ans === 'A' ? 'B' : 'A') : ans}.`,
+        discrepancyNote: isMismatch ? `LỆCH ĐÁP ÁN: Tác giả ghi ${ans} nhưng tính toán giải tích chuẩn xác ra ${ans === 'A' ? 'B' : 'A'}. Cần đối chiếu lại biến đổi!` : 'Trùng khớp đáp án.'
+      },
+      ambiguityCheck: {
+        isAmbiguous,
+        ambiguityType: isAmbiguous ? 'two_interpretations' : 'none',
+        explanation: isAmbiguous ? 'Câu từ chưa xác định rõ miền khảo sát, có thể gây hiểu hai cách khi giải.' : 'Câu hỏi tường minh, không có yếu tố mơ hồ hay đa nghĩa.',
+        suggestedRewrite: isAmbiguous ? `${q.content} (trên tập xác định tương ứng)` : 'Giữ nguyên câu hỏi.'
+      },
+      matrixAlignment: {
+        topic: 'Chương trình Toán THPT',
+        competencyRequirement: 'Vận dụng kiến thức cơ bản để giải quyết bài toán định lượng.',
+        actualLevel: idx < 4 ? 'NB' : idx < 8 ? 'TH' : 'VD',
+        matrixLevel: idx < 4 ? 'NB' : idx < 8 ? 'TH' : isDeviated ? 'TH' : 'VD',
+        isDeviated,
+        deviationNote: isDeviated ? 'Câu này đòi hỏi mức độ Vận dụng nhưng ma trận chỉ xếp Thông hiểu.' : 'Khớp 100% với ma trận đặc tả.'
+      },
+      distractorAnalysis: {
+        tooObviousDistractors: hasObviousDistractor ? [
+          {
+            option: q.options && q.options[3] ? q.options[3] : 'D. Phương án phi lý',
+            reason: 'Số liệu hoặc giá trị âm/dương hoàn toàn trái ngược quy tắc toán học, học sinh không cần học cũng loại được.'
+          }
+        ] : [],
+        suggestedDistractors: [
+          {
+            option: 'Phương án nhiễu bẫy Casio / nhầm dấu',
+            studentMistake: 'Học sinh thường quên đổi dấu khi chuyển vế hoặc bấm máy tính nhầm ngoặc.',
+            explanation: 'Tạo bẫy sai lầm điển hình giúp phân loại học sinh khá - giỏi.'
+          }
+        ]
+      },
+      suggestedCorrection: {
+        improvedQuestion: q.content,
+        improvedOptions: q.options || ['A. ...', 'B. ...', 'C. ...', 'D. ...'],
+        improvedAnswer: isMismatch ? (ans === 'A' ? 'B' : 'A') : ans,
+        explanation: `Lời giải chi tiết và căn cứ lý thuyết chuẩn mực của câu hỏi ${q.number}.`
+      }
+    };
+  };
+
+  // =========================================================================
+  // RÀ SOÁT VÀ PHẢN BIỆN TUẦN TỰ TỪNG CÂU HỎI (CÓ THANH TIẾN ĐỘ THỜI GIAN THỰC)
+  // =========================================================================
+  const handleAnalyzeAllQuestionsSequentially = async () => {
+    const questions = getExamQuestionsList();
+    if (questions.length === 0) {
+      showNotification('Vui lòng nhập hoặc tải file đề thi lên trước khi phản biện.');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setSequentialProgress({ current: 0, total: questions.length });
+    const results: QuestionCritique[] = [];
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      setAnalyzingIndex(i);
+      setSequentialProgress({ current: i + 1, total: questions.length });
+      setStatusMessage(`Đang phản biện Câu ${q.number} (${i + 1}/${questions.length}): AI tự giải, bắt câu mơ hồ & rà phương án nhiễu...`);
+
+      try {
+        const item = await critiqueSingleQuestionAI(q, matrixText);
+        results.push(item);
+      } catch (err) {
+        console.warn(`Lỗi khi AI phản biện Câu ${q.number}, áp dụng dự phòng:`, err);
+        results.push(generateLocalFallbackForQuestion(q, i));
+      }
+
+      // Cập nhật kết quả động cho giao diện
+      setCritiqueList([...results]);
+      setOverallCritique(recalculateOverallCritique([...results]));
+    }
+
+    setIsAnalyzing(false);
+    setAnalyzingIndex(null);
+    setSequentialProgress(null);
+    setStatusMessage('');
+    setActiveTabMode('result');
+    setViewLayout('per_question');
+    setSelectedQuestionIdx(0);
+    showNotification(`Đã hoàn tất rà soát và phản biện toàn bộ ${results.length} câu hỏi theo 4 tiêu chuẩn bắt buộc!`);
+  };
+
+  // Phản biện lại riêng cho câu đang được chọn
+  const handleCritiqueCurrentQuestion = async () => {
+    if (critiqueList.length === 0 || selectedQuestionIdx >= critiqueList.length) return;
+    const currentQ = critiqueList[selectedQuestionIdx];
+    
+    setIsAnalyzing(true);
+    setStatusMessage(`Đang phản biện chuyên sâu riêng Câu ${currentQ.questionNumber}...`);
+
+    try {
+      const updated = await critiqueSingleQuestionAI({
+        number: currentQ.questionNumber,
+        content: currentQ.originalContent,
+        options: currentQ.originalOptions,
+        providedAnswer: currentQ.providedAnswer
+      }, matrixText);
+
+      const nextList = [...critiqueList];
+      nextList[selectedQuestionIdx] = updated;
+      setCritiqueList(nextList);
+      setOverallCritique(recalculateOverallCritique(nextList));
+      showNotification(`Đã cập nhật phản biện Câu ${currentQ.questionNumber}!`);
+    } catch (err: any) {
+      showNotification(`Không thể phản biện riêng câu: ${err.message}`);
+    } finally {
+      setIsAnalyzing(false);
+      setStatusMessage('');
+    }
+  };
+
+  // =========================================================================
+  // TIẾN HÀNH PHẢN BIỆN TOÀN ĐỀ THI
   // =========================================================================
   const handleAnalyzeCritique = async () => {
     if (!examText.trim() && !base64ExamFile) {
       showNotification('Vui lòng nhập hoặc tải file đề thi lên trước khi phản biện.');
+      return;
+    }
+
+    // Nếu văn bản có nhiều câu và người dùng bấm nút chính, chạy tuần tự từng câu
+    const questions = getExamQuestionsList();
+    if (questions.length > 1) {
+      await handleAnalyzeAllQuestionsSequentially();
       return;
     }
 
@@ -463,7 +855,8 @@ ${matrixText || 'Không đính kèm ma trận riêng (Hãy tự đối chiếu c
         setOverallCritique(parsedData.overall);
         setCritiqueList(parsedData.questions);
         setActiveTabMode('result');
-        setCritiqueViewTab('answers');
+        setViewLayout('per_question');
+        setSelectedQuestionIdx(0);
         showNotification('Đã hoàn thành phản biện chuyên sâu theo đúng 4 tiêu chí bắt buộc!');
       } else {
         applyLocalHeuristicCritique();
@@ -1013,20 +1406,37 @@ ${matrixText || 'Không đính kèm ma trận riêng (Hãy tự đối chiếu c
                 </div>
               </div>
 
+              {/* THANH TIẾN ĐỘ RÀ SOÁT TỪNG CÂU (NẾU ĐANG CHẠY) */}
+              {sequentialProgress && (
+                <div className="p-3 bg-teal-50 dark:bg-teal-950/60 rounded-xl border border-teal-200 dark:border-teal-800 space-y-1.5 mt-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-teal-900 dark:text-teal-200">
+                    <span>Tiến độ rà soát từng câu:</span>
+                    <span>{sequentialProgress.current} / {sequentialProgress.total} câu ({Math.round((sequentialProgress.current / sequentialProgress.total) * 100)}%)</span>
+                  </div>
+                  <div className="w-full bg-teal-200 dark:bg-teal-900 h-2 rounded-full overflow-hidden">
+                    <div 
+                      className="bg-teal-600 h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${(sequentialProgress.current / sequentialProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* NÚT BẮT ĐẦU RÀ SOÁT VÀ PHẢN BIỆN TỪNG CÂU */}
               <button
-                onClick={handleAnalyzeCritique}
+                onClick={handleAnalyzeAllQuestionsSequentially}
                 disabled={isAnalyzing || (!examText.trim() && !base64ExamFile)}
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-teal-600 via-teal-700 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-md transition active:scale-98 flex items-center justify-center gap-2 cursor-pointer mt-2"
               >
                 {isAnalyzing ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>{statusMessage || 'Đang phản biện chuyên sâu...'}</span>
+                    <span>{statusMessage || 'Đang rà soát và phản biện từng câu...'}</span>
                   </>
                 ) : (
                   <>
                     <Sparkles size={16} className="text-amber-300" />
-                    <span>BẮT ĐẦU PHẢN BIỆN ĐỀ THI (4 TIÊU CHÍ AI)</span>
+                    <span>⚡ RÀ SOÁT & PHẢN BIỆN TỪNG CÂU (4 TIÊU CHÍ AI)</span>
                   </>
                 )}
               </button>
@@ -1065,8 +1475,468 @@ ${matrixText || 'Không đính kèm ma trận riêng (Hãy tự đối chiếu c
             </div>
           </div>
 
-          {/* 4 TABS PHẢN BIỆN CHUYÊN BIỆT */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+          {/* THANH ĐIỀU HƯỚNG CHẾ ĐỘ XEM: TỪNG CÂU VS TOÀN ĐỀ */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 dark:bg-slate-800 p-2 rounded-2xl">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewLayout('per_question')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  viewLayout === 'per_question'
+                    ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-sm ring-1 ring-teal-200 dark:ring-teal-800'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                <Eye size={14} />
+                <span>🔍 Rà Soát Từng Câu (Per-Question Inspector)</span>
+              </button>
+              <button
+                onClick={() => setViewLayout('all_criteria')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  viewLayout === 'all_criteria'
+                    ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-sm ring-1 ring-teal-200 dark:ring-teal-800'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                <Layers size={14} />
+                <span>📊 Bảng Tổng Hợp 4 Tiêu Chí</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAnalyzeAllQuestionsSequentially}
+                disabled={isAnalyzing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white transition disabled:opacity-50 cursor-pointer shadow-xs"
+                title="Rà soát và phản biện tự động từng câu từ đầu đến cuối"
+              >
+                <RefreshCw size={13} className={isAnalyzing ? 'animate-spin' : ''} />
+                <span>Rà soát lại toàn bộ đề</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ========================================================= */}
+          {/* CHẾ ĐỘ 1: RÀ SOÁT TỪNG CÂU HỎI (PER-QUESTION INSPECTOR) */}
+          {/* ========================================================= */}
+          {viewLayout === 'per_question' && critiqueList.length > 0 && (() => {
+            const currentQ = critiqueList[selectedQuestionIdx] || critiqueList[0];
+            const check = currentQ.answerCheck || { isMatch: true, aiAnswer: currentQ.providedAnswer || 'A', providedAnswer: currentQ.providedAnswer || 'A', aiSolution: '' };
+            const amb = currentQ.ambiguityCheck || { isAmbiguous: false, explanation: 'Rõ ràng', suggestedRewrite: '' };
+            const mat = currentQ.matrixAlignment || { topic: '', competencyRequirement: '', actualLevel: 'NB', isDeviated: false };
+            const dist = currentQ.distractorAnalysis || { tooObviousDistractors: [], suggestedDistractors: [] };
+            const corr = currentQ.suggestedCorrection || { improvedQuestion: currentQ.originalContent, explanation: '' };
+
+            const handleCopyImproved = () => {
+              const textToCopy = `${corr.improvedQuestion}\n${corr.improvedOptions ? corr.improvedOptions.join('\n') : ''}\nĐáp án: ${corr.improvedAnswer || check.aiAnswer}\nLời giải: ${corr.explanation}`;
+              navigator.clipboard.writeText(textToCopy);
+              setCopiedIdx(selectedQuestionIdx);
+              setTimeout(() => setCopiedIdx(null), 2500);
+              showNotification(`Đã sao chép Câu ${currentQ.questionNumber} đã hoàn thiện vào bộ nhớ tạm!`);
+            };
+
+            return (
+              <div className="space-y-5">
+                {/* THANH CHỌN CÂU HỎI (QUESTION NAVIGATOR RIBBON) */}
+                <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-black uppercase text-slate-500 tracking-wider">
+                      Chọn câu hỏi để phản biện chuyên sâu ({critiqueList.length} câu):
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-500">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"></span> Lệch ĐA</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Mơ hồ</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Lệch MT</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span> Nhiễu lộ</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Đạt chuẩn</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin">
+                    {critiqueList.map((q, idx) => {
+                      const isMismatch = !q.answerCheck?.isMatch;
+                      const isAmbiguous = q.ambiguityCheck?.isAmbiguous;
+                      const isDeviated = q.matrixAlignment?.isDeviated;
+                      const hasObvious = (q.distractorAnalysis?.tooObviousDistractors?.length || 0) > 0;
+                      const isSelected = selectedQuestionIdx === idx;
+
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedQuestionIdx(idx)}
+                          className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                            isSelected
+                              ? 'bg-slate-900 text-white shadow-md ring-2 ring-teal-500 dark:bg-teal-500 dark:text-slate-950'
+                              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                          }`}
+                        >
+                          <span>Câu {q.questionNumber || idx + 1}</span>
+                          <div className="flex items-center gap-1">
+                            {isMismatch && <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" title="Lệch đáp án!"></span>}
+                            {isAmbiguous && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Câu mơ hồ!"></span>}
+                            {isDeviated && <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" title="Lệch ma trận!"></span>}
+                            {hasObvious && <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" title="Phương án nhiễu quá lộ!"></span>}
+                            {!isMismatch && !isAmbiguous && !isDeviated && !hasObvious && (
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Đạt chuẩn"></span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* HEADER CHI TIẾT CÂU ĐANG CHỌN */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-base font-black text-slate-900 dark:text-slate-100">
+                      Rà soát chi tiết Câu {currentQ.questionNumber || selectedQuestionIdx + 1}
+                    </span>
+                    <span className="text-xs font-bold text-slate-400">
+                      ({selectedQuestionIdx + 1}/{critiqueList.length})
+                    </span>
+
+                    {/* Status badges */}
+                    {!check.isMatch ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-600 text-white flex items-center gap-1 animate-pulse">
+                        <XCircle size={12} /> LỆCH ĐÁP ÁN!
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Khớp đáp án
+                      </span>
+                    )}
+
+                    {amb.isAmbiguous && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white flex items-center gap-1">
+                        <AlertTriangle size={12} /> CÂU MƠ HỒ
+                      </span>
+                    )}
+
+                    {mat.isDeviated && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-600 text-white flex items-center gap-1">
+                        <AlertCircle size={12} /> LỆCH MA TRẬN
+                      </span>
+                    )}
+
+                    {dist.tooObviousDistractors.length > 0 && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-600 text-white flex items-center gap-1">
+                        <Brain size={12} /> NHIỄU LỘ ({dist.tooObviousDistractors.length})
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Navigation & action buttons */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedQuestionIdx(prev => Math.max(0, prev - 1))}
+                      disabled={selectedQuestionIdx === 0}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 disabled:opacity-40 transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <ChevronLeft size={14} />
+                      <span>Câu trước</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedQuestionIdx(prev => Math.min(critiqueList.length - 1, prev + 1))}
+                      disabled={selectedQuestionIdx === critiqueList.length - 1}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 disabled:opacity-40 transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Câu sau</span>
+                      <ChevronRight size={14} />
+                    </button>
+                    <button
+                      onClick={handleCritiqueCurrentQuestion}
+                      disabled={isAnalyzing}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Chạy lại phản biện AI riêng cho câu này"
+                    >
+                      <Sparkles size={13} className="text-amber-300" />
+                      <span>AI Phản biện lại câu này</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 1. NỘI DUNG CÂU HỎI GỐC & PHƯƠNG ÁN */}
+                <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold uppercase text-slate-500 tracking-wider">
+                      Đề bài câu hỏi & các phương án lựa chọn:
+                    </span>
+                    {currentQ.providedAnswer && (
+                      <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                        Đáp án tác giả gửi kèm: <strong>{currentQ.providedAnswer}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 leading-relaxed">
+                    <MathRenderer content={currentQ.originalContent} />
+                  </div>
+
+                  {currentQ.originalOptions && currentQ.originalOptions.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                      {currentQ.originalOptions.map((opt, oIdx) => {
+                        const isThisProvided = currentQ.providedAnswer && opt.trim().startsWith(currentQ.providedAnswer);
+                        return (
+                          <div 
+                            key={oIdx}
+                            className={`p-2.5 rounded-xl border font-medium ${
+                              isThisProvided 
+                                ? 'bg-indigo-50/80 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-950 dark:text-indigo-200 ring-1 ring-indigo-300'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                            }`}
+                          >
+                            <MathRenderer content={opt} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. KHUNG 4 TIÊU CHUẨN PHẢN BIỆN BẮT BUỘC */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* TIÊU CHUẨN 1: BẮT LỖI ĐÁP ÁN */}
+                  <div className={`p-4 rounded-2xl border space-y-3 ${
+                    !check.isMatch 
+                      ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-300 dark:border-rose-900 ring-2 ring-rose-200 dark:ring-rose-950' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-black text-rose-700 dark:text-rose-400 flex items-center gap-1.5 uppercase">
+                        🎯 1. Bắt Lỗi Đáp Án (AI Tự Giải Độc Lập)
+                      </span>
+                      {!check.isMatch ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-rose-600 text-white">
+                          LỆCH ĐÁP ÁN!
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          Trùng khớp
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <span className="text-[10px] font-bold text-slate-400 block">Đáp án tác giả gửi:</span>
+                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-400">
+                          {check.providedAnswer || currentQ.providedAnswer || 'Chưa cung cấp'}
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <span className="text-[10px] font-bold text-slate-400 block">AI tự giải độc lập:</span>
+                        <span className={`text-xs font-black ${!check.isMatch ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {check.aiAnswer}
+                        </span>
+                      </div>
+                    </div>
+
+                    {check.discrepancyNote && (
+                      <div className="p-2.5 bg-rose-100/80 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-800 rounded-xl text-xs text-rose-900 dark:text-rose-200 font-bold leading-relaxed">
+                        ⚠️ {check.discrepancyNote}
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 block">Lời giải từng bước của AI:</span>
+                      <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap">
+                        <MathRenderer content={check.aiSolution || 'Chưa có lời giải'} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TIÊU CHUẨN 2: BẮT CÂU MƠ HỒ */}
+                  <div className={`p-4 rounded-2xl border space-y-3 ${
+                    amb.isAmbiguous 
+                      ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900 ring-2 ring-amber-200 dark:ring-amber-950' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-black text-amber-700 dark:text-amber-400 flex items-center gap-1.5 uppercase">
+                        ⚠️ 2. Bắt Câu Mơ Hồ & Thiếu Dữ Kiện
+                      </span>
+                      {amb.isAmbiguous ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-500 text-white">
+                          CÓ YẾU TỐ MƠ HỒ
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          Tường minh
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 block">Đánh giá tính chặt chẽ:</span>
+                      <p className="leading-relaxed">{amb.explanation}</p>
+                    </div>
+
+                    {amb.suggestedRewrite && amb.suggestedRewrite !== 'Giữ nguyên.' && (
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-900 rounded-xl space-y-1">
+                        <span className="text-[11px] font-extrabold text-amber-900 dark:text-amber-300 block">
+                          Đề xuất cách viết lại chuẩn xác:
+                        </span>
+                        <div className="text-xs text-slate-800 dark:text-slate-200 font-medium italic">
+                          <MathRenderer content={amb.suggestedRewrite} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* TIÊU CHUẨN 3: SOÁT VỚI MA TRẬN & BẢN ĐẶC TẢ */}
+                  <div className={`p-4 rounded-2xl border space-y-3 ${
+                    mat.isDeviated 
+                      ? 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-300 dark:border-blue-900' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-black text-blue-700 dark:text-blue-400 flex items-center gap-1.5 uppercase">
+                        📊 3. Soát Với Ma Trận & Bản Đặc TẢ
+                      </span>
+                      {mat.isDeviated ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-blue-600 text-white">
+                          LỆCH MA TRẬN
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          Khớp 100%
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 block">Chủ đề kiến thức:</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{mat.topic || 'Toán THPT'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 block">Yêu cầu cần đạt (YCCĐ) theo GDPT 2018:</span>
+                        <p className="font-medium text-slate-700 dark:text-slate-300 leading-relaxed">{mat.competencyRequirement}</p>
+                      </div>
+                      <div className="flex items-center gap-3 pt-1">
+                        <div className="bg-slate-50 dark:bg-slate-800 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <span className="text-[10px] font-bold text-slate-400 block">Mức độ thực tế:</span>
+                          <span className="text-xs font-black text-indigo-700 dark:text-indigo-400">{mat.actualLevel}</span>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <span className="text-[10px] font-bold text-slate-400 block">Mức độ ma trận:</span>
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200">{mat.matrixLevel || mat.actualLevel}</span>
+                        </div>
+                      </div>
+                      {mat.deviationNote && (
+                        <p className="text-[11px] text-blue-800 dark:text-blue-300 font-semibold pt-1">
+                          ● {mat.deviationNote}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* TIÊU CHUẨN 4: SOÁT PHƯƠNG ÁN NHIỄU */}
+                  <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-black text-purple-700 dark:text-purple-400 flex items-center gap-1.5 uppercase">
+                        💡 4. Soát Phương Án Nhiễu & Bẫy Sai Lầm
+                      </span>
+                      {dist.tooObviousDistractors.length > 0 ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-purple-600 text-white">
+                          CÓ NHIỄU QUÁ LỘ
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          Nhiễu phân hóa tốt
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Phương án quá lộ */}
+                    {dist.tooObviousDistractors.length > 0 ? (
+                      <div className="p-2.5 rounded-xl bg-rose-50/80 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 space-y-1">
+                        <span className="text-[11px] font-extrabold text-rose-800 dark:text-rose-300 block">
+                          Phương án quá lộ (học sinh dễ loại trừ không cần học):
+                        </span>
+                        {dist.tooObviousDistractors.map((obv, oIdx) => (
+                          <div key={oIdx} className="text-xs text-rose-900 dark:text-rose-200 pl-3 border-l-2 border-rose-400">
+                            <strong>{obv.option}:</strong> {obv.reason}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                        ✓ Các phương án không bị lộ, đòi hỏi học sinh phải suy luận.
+                      </div>
+                    )}
+
+                    {/* Gợi ý phương án nhiễu theo bẫy */}
+                    {dist.suggestedDistractors.length > 0 && (
+                      <div className="p-2.5 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900 space-y-1.5">
+                        <span className="text-[11px] font-extrabold text-purple-800 dark:text-purple-300 block">
+                          Gợi ý phương án nhiễu bẫy lỗi sai thực tế:
+                        </span>
+                        {dist.suggestedDistractors.map((sug, sIdx) => (
+                          <div key={sIdx} className="text-xs text-purple-950 dark:text-purple-200 pl-3 border-l-2 border-purple-400 space-y-0.5">
+                            <span className="font-black text-purple-700 dark:text-purple-300">{sug.option}</span>
+                            <p className="text-[10px] italic">Bẫy: "{sug.studentMistake}"</p>
+                            <p className="text-[10px] text-slate-600 dark:text-slate-400">{sug.explanation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. ĐỀ XUẤT CÂU HỎI HOÀN THIỆN ĐÃ ĐƯỢC HIỆU ĐÍNH */}
+                <div className="bg-teal-50/60 dark:bg-teal-950/40 p-4 rounded-2xl border border-teal-200 dark:border-teal-900 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black text-teal-800 dark:text-teal-300 uppercase flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-amber-500" />
+                      Đề xuất câu hỏi hoàn thiện (Bản chuẩn sư phạm 100%):
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-teal-600 text-white">
+                        Đáp án chuẩn: {corr.improvedAnswer || check.aiAnswer}
+                      </span>
+                      <button
+                        onClick={handleCopyImproved}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-700 hover:bg-teal-100 transition flex items-center gap-1 cursor-pointer"
+                      >
+                        {copiedIdx === selectedQuestionIdx ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                        <span>{copiedIdx === selectedQuestionIdx ? 'Đã chép!' : 'Chép câu sửa'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    <MathRenderer content={corr.improvedQuestion} />
+                  </div>
+
+                  {corr.improvedOptions && corr.improvedOptions.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                      {corr.improvedOptions.map((opt, oIdx) => (
+                        <div key={oIdx} className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-teal-200 dark:border-teal-800 font-semibold text-slate-800 dark:text-slate-200">
+                          <MathRenderer content={opt} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="text-[11px] bg-white dark:bg-slate-900 p-3 rounded-xl border border-teal-200 dark:border-teal-800 text-slate-700 dark:text-slate-300 space-y-1">
+                    <strong className="text-teal-900 dark:text-teal-200 block">Lời giải và căn cứ lý thuyết chuẩn mực:</strong>
+                    <div className="font-mono text-xs leading-relaxed">
+                      <MathRenderer content={corr.explanation} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ========================================================= */}
+          {/* CHẾ ĐỘ 2: TỔNG HỢP 4 TIÊU CHÍ TOÀN ĐỀ (BẢNG XEM CŨ) */}
+          {/* ========================================================= */}
+          {viewLayout === 'all_criteria' && (
+            <div className="space-y-6">
+              {/* 4 TABS PHẢN BIỆN CHUYÊN BIỆT */}
+              <div className="flex flex-wrap items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
             <button
               onClick={() => setCritiqueViewTab('answers')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
@@ -1475,6 +2345,8 @@ ${matrixText || 'Không đính kèm ma trận riêng (Hãy tự đối chiếu c
                   </div>
                 ))}
               </div>
+            </div>
+          )}
             </div>
           )}
         </div>

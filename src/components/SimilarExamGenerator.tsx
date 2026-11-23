@@ -25,6 +25,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
   const [includeShortSolution, setIncludeShortSolution] = useState<boolean>(false);
   const [useRealWorldData, setUseRealWorldData] = useState<boolean>(false);
   const [noParameterM, setNoParameterM] = useState<boolean>(false);
+  const [keepOriginalDiagrams, setKeepOriginalDiagrams] = useState<boolean>(true);
   const [examCount, setExamCount] = useState<number>(1);
   const [contextSuggestion, setContextSuggestion] = useState<string>('');
   
@@ -137,7 +138,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
     setResultText('');
     setProgress(10);
 
-    const finalContextSuggestion = `${contextSuggestion}\n${noParameterM ? '- Yêu cầu các câu hỏi KHÔNG chứa tham số m.\n' : ''}${useRealWorldData ? '- Ưu tiên sử dụng nhiều dữ kiện thực tế, bối cảnh thực tiễn vào các câu hỏi.\n' : ''}`;
+    const finalContextSuggestion = `${contextSuggestion}\n${noParameterM ? '- Yêu cầu các câu hỏi KHÔNG chứa tham số m.\n' : ''}${useRealWorldData ? '- Ưu tiên sử dụng nhiều dữ kiện thực tế, bối cảnh thực tiễn vào các câu hỏi.\n' : ''}${keepOriginalDiagrams ? '- BẮT BUỘC GIỮ NGUYÊN HÌNH ẢNH, BẢNG BIẾN THIÊN, ĐỒ THỊ GỐC: Đối với tất cả câu hỏi có hình ảnh minh họa, bảng biến thiên, đồ thị hàm số (Oxy) hoặc hình học không gian trong đề gốc, bạn PHẢI GIỮ NGUYÊN 100% HÌNH VẼ ĐÓ (giữ nguyên mô tả hình vẽ hoặc mã markdown ảnh ![...](...)). TUYỆT ĐỐI KHÔNG ĐƯỢC thay đổi hình vẽ hay vẽ hình mới. CHỈ ĐƯỢC THAY ĐỔI YÊU CẦU, LỆNH HỎI, CÁC ĐÁP ÁN A, B, C, D VÀ LỜI GIẢI dựa trên chính hình ảnh gốc đó (Ví dụ: câu gốc hỏi khoảng đồng biến thì đề mới hỏi điểm cực trị, số nghiệm phương trình, tiệm cận, GTLN/GTNN trên chính hình ảnh đó).\n' : ''}`;
 
     try {
       let extractedText = '';
@@ -196,6 +197,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
             apiKey: apiKey,
             includeShortSolution,
             examCount,
+            keepOriginalDiagrams,
             contextSuggestion: finalContextSuggestion
           })
         });
@@ -256,6 +258,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
             apiKey: apiKey,
             includeShortSolution,
             examCount,
+            keepOriginalDiagrams,
             contextSuggestion: finalContextSuggestion
           })
         });
@@ -521,6 +524,23 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
                       className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-gray-300"
                     />
                     <span className="font-semibold text-slate-800 dark:text-slate-200">Câu hỏi sử dụng nhiều dữ kiện thực tế</span>
+                  </label>
+
+                  <label className="flex items-start gap-3 cursor-pointer mt-2 p-2.5 rounded-xl bg-purple-100/60 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 hover:bg-purple-100/90 dark:hover:bg-purple-900/50 transition">
+                    <input 
+                      type="checkbox"
+                      checked={keepOriginalDiagrams}
+                      onChange={(e) => setKeepOriginalDiagrams(e.target.checked)}
+                      className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 border-gray-300 mt-0.5 shrink-0"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-purple-900 dark:text-purple-200 text-xs sm:text-sm">
+                        Giữ nguyên hình ảnh, bảng biến thiên, đồ thị (chỉ đổi câu hỏi & yêu cầu)
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Giữ nguyên hình vẽ/bảng biến thiên của đề gốc, AI chỉ đổi yêu cầu bài toán và 4 phương án.
+                      </span>
+                    </div>
                   </label>
 
                   <div className="mt-2">

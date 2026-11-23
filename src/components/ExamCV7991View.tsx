@@ -3,6 +3,7 @@ import { ExamCV7991, Part2Question, Part1Question, Part3Question, Part4EssayQues
 import { exportExamToWord, exportMatrixSpecToWord } from '../utils/exportWord';
 import { MultiCodeExamModal } from './MultiCodeExamModal';
 import { StudentExamModal } from './StudentExamModal';
+import { ExportToOnlineExamModal } from './ExportToOnlineExamModal';
 import { MathRenderer } from './MathRenderer';
 import { 
   CheckSquare, 
@@ -20,7 +21,9 @@ import {
   HelpCircle,
   Eye,
   EyeOff,
-  PlayCircle
+  PlayCircle,
+  Globe,
+  QrCode
 } from 'lucide-react';
 
 interface ExamCV7991ViewProps {
@@ -43,6 +46,16 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
   const [showAnswerKeys, setShowAnswerKeys] = useState<boolean>(false);
   const [isMultiCodeModalOpen, setIsMultiCodeModalOpen] = useState<boolean>(false);
   const [isStudentExamModalOpen, setIsStudentExamModalOpen] = useState<boolean>(false);
+  const [isExportOnlineModalOpen, setIsExportOnlineModalOpen] = useState<boolean>(false);
+  const [onlineExamData, setOnlineExamData] = useState<{
+    examId: string;
+    title: string;
+    questionsCount: number;
+    duration: number;
+    examOnlineUrl: string;
+    tunnelUrl?: string;
+  } | null>(null);
+  const [isExportingOnline, setIsExportingOnline] = useState<boolean>(false);
   const [studentPart3Answers, setStudentPart3Answers] = useState<Record<string, string>>({});
   const [studentPart2Answers, setStudentPart2Answers] = useState<Record<string, Record<string, boolean | null>>>({});
 
@@ -51,6 +64,28 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
   const countPart2 = exam.part2Questions.length;
   const countPart3 = exam.part3Questions.length;
   const countPart4 = exam.part4Questions.length;
+
+  const handleExportToKiemTraOnline = async () => {
+    setIsExportingOnline(true);
+    try {
+      const res = await fetch('/api/export-to-kiem-tra-online', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exam, duration: 90 })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setOnlineExamData(data);
+        setIsExportOnlineModalOpen(true);
+      } else {
+        alert(data.error || 'Có lỗi khi xuất đề sang KIEM_TRA_ONLINE');
+      }
+    } catch (err: any) {
+      alert('Không thể kết nối đến máy chủ: ' + err.message);
+    } finally {
+      setIsExportingOnline(false);
+    }
+  };
 
   const handleRatioChange = (type: 'know' | 'understand', val: number) => {
     if (type === 'know') {
@@ -102,14 +137,25 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* NÚT THI THỬ TRỰC TUYẾN CHẤM ĐIỂM */}
+          {/* NÚT LÀM THỬ & DUYỆT ĐỀ (GIÁO VIÊN) */}
           <button
             onClick={() => setIsStudentExamModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md transition active:scale-95"
-            title="Mở phòng thi thử trực tuyến cho học sinh tự làm bài và chấm điểm tự động"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300 shadow-sm transition active:scale-95"
+            title="Mở phòng thi thử nội bộ để giáo viên duyệt đề, kiểm tra đáp án và giải thử"
           >
-            <PlayCircle className="w-4 h-4 text-amber-300" />
-            <span>Phòng Thi Thử Trực Tuyến</span>
+            <Eye className="w-4 h-4 text-indigo-600" />
+            <span>Làm Thử & Duyệt Đề (Giáo Viên)</span>
+          </button>
+
+          {/* NÚT GIAO THI ONLINE TOÀN LỚP (MÃ QR & LINK INTERNET) */}
+          <button
+            onClick={handleExportToKiemTraOnline}
+            disabled={isExportingOnline}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md transition active:scale-95 disabled:opacity-50"
+            title="1-Click xuất đề sang hệ thống KIEM_TRA_ONLINE, tạo mã QR và link làm bài trên điện thoại/máy tính cho học sinh"
+          >
+            <Globe className="w-4 h-4 text-emerald-300" />
+            <span>{isExportingOnline ? 'Đang tạo QR thi...' : 'Giao Thi Online Toàn Lớp (Mã QR)'}</span>
           </button>
 
           {/* NÚT TRỘN ĐỀ 4 MÃ ĐỀ & BẢNG ĐÁP ÁN */}
@@ -574,11 +620,18 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
         onSelectExamCode={(selected) => onUpdateExam(selected)}
       />
 
-      {/* MODAL PHÒNG THI THỬ TRỰC TUYẾN CHẤM ĐIỂM */}
+      {/* MODAL PHÒNG THI THỬ TRỰC TUYẾN CHẤM ĐIỂM (LÀM THỬ & DUYỆT ĐỀ) */}
       <StudentExamModal
         isOpen={isStudentExamModalOpen}
         onClose={() => setIsStudentExamModalOpen(false)}
         exam={exam}
+      />
+
+      {/* MODAL GIAO THI ONLINE TOÀN LỚP (MÃ QR & LINK INTERNET) */}
+      <ExportToOnlineExamModal
+        isOpen={isExportOnlineModalOpen}
+        onClose={() => setIsExportOnlineModalOpen(false)}
+        examData={onlineExamData}
       />
     </div>
   );
