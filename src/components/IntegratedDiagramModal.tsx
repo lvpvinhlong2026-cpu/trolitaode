@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { X, TrendingUp, Table, Box, Sparkles, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, TrendingUp, Table, Box, Sparkles, CheckCircle2, ChevronDown } from 'lucide-react';
 import FunctionGraphTool from './FunctionGraphTool';
 import TableVariationTool from './TableVariationTool';
 import GspSketchpad from './GspSketchpad';
+import { DiagramSuggestion } from '../utils/mathDiagramSuggester';
 
 export type DiagramToolTab = 'graph' | 'bbt' | 'geometry';
 
@@ -12,6 +13,8 @@ export interface IntegratedDiagramModalProps {
   onInsertImage: (dataUrl: string, targetQuestionNumber?: number | string) => void;
   initialTab?: DiagramToolTab;
   targetQuestionNumber?: number | string;
+  allQuestions?: string[];
+  initialSuggestion?: DiagramSuggestion;
   apiKey?: string;
   model?: string;
 }
@@ -22,24 +25,50 @@ export const IntegratedDiagramModal: React.FC<IntegratedDiagramModalProps> = ({
   onInsertImage,
   initialTab = 'graph',
   targetQuestionNumber,
+  allQuestions = ['Câu 1', 'Câu 2', 'Câu 3', 'Câu 4', 'Câu 5', 'Câu 6', 'Câu 7', 'Câu 8', 'Câu 9', 'Câu 10', 'Câu 11', 'Câu 12'],
+  initialSuggestion,
   apiKey = '',
   model = 'auto'
 }) => {
-  const [activeTab, setActiveTab] = useState<DiagramToolTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<DiagramToolTab>(
+    initialSuggestion?.diagramType || initialTab
+  );
+  const [selectedQuestion, setSelectedQuestion] = useState<string>(
+    String(targetQuestionNumber || initialSuggestion?.targetQuestion || allQuestions[0] || 'Câu 1')
+  );
+
+  useEffect(() => {
+    if (initialSuggestion?.diagramType) {
+      setActiveTab(initialSuggestion.diagramType);
+    } else if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, initialSuggestion]);
+
+  useEffect(() => {
+    if (targetQuestionNumber) {
+      const qStr = String(targetQuestionNumber).startsWith('Câu') 
+        ? String(targetQuestionNumber) 
+        : `Câu ${targetQuestionNumber}`;
+      setSelectedQuestion(qStr);
+    } else if (initialSuggestion?.targetQuestion) {
+      setSelectedQuestion(initialSuggestion.targetQuestion);
+    }
+  }, [targetQuestionNumber, initialSuggestion]);
 
   if (!isOpen) return null;
 
   const handleInsert = (dataUrl: string) => {
-    onInsertImage(dataUrl, targetQuestionNumber);
+    onInsertImage(dataUrl, selectedQuestion);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/75 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-[1440px] max-h-[96vh] flex flex-col overflow-hidden">
         
         {/* HEADER BAR CỦA MODAL TÍCH HỢP */}
-        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/90 dark:bg-slate-950/80 shrink-0">
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 dark:bg-slate-950/80 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-xs">
               <Sparkles size={17} />
@@ -47,18 +76,31 @@ export const IntegratedDiagramModal: React.FC<IntegratedDiagramModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">
-                  Bộ Công Cụ Vẽ Đồ Thị, Bảng Biến Thiên & Hình Học Không Gian (300 DPI)
+                  Bộ Vẽ Hình 300 DPI (Bảng Biến Thiên • Đồ Thị Oxy • Hình 3D)
                 </span>
-                {targetQuestionNumber && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300">
-                    Câu {targetQuestionNumber}
-                  </span>
-                )}
               </div>
               <p className="text-[11px] text-slate-500 font-medium">
-                Vẽ và chèn trực tiếp vào đề thi để tự động xuất ra file Word (.docx) chuẩn sắc nét
+                Vẽ và dán trực tiếp vào đề thi để xuất Word (.docx) chuẩn sắc nét in ấn
               </p>
             </div>
+          </div>
+
+          {/* VÙNG CHỌN CÂU HỎI TRONG ĐỀ CẦN DÁN */}
+          <div className="flex items-center gap-2 bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 px-3 py-1.5 rounded-2xl shadow-2xs">
+            <span className="text-xs font-bold text-teal-950 dark:text-teal-200">
+              Vị trí dán vào đề:
+            </span>
+            <select
+              value={selectedQuestion}
+              onChange={(e) => setSelectedQuestion(e.target.value)}
+              className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-teal-300 dark:border-teal-700 rounded-xl text-xs font-black text-teal-900 dark:text-teal-200 outline-none"
+            >
+              {allQuestions.map((q) => (
+                <option key={q} value={q}>
+                  {q}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* 3 TABS CHUYỂN ĐỔI CÔNG CỤ */}
@@ -102,7 +144,7 @@ export const IntegratedDiagramModal: React.FC<IntegratedDiagramModalProps> = ({
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
             title="Đóng modal"
           >
             <X size={18} />

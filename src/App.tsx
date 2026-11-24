@@ -33,6 +33,7 @@ import GspSketchpad from './components/GspSketchpad';
 import GeometryTool from './components/GeometryTool';
 import UserGuide from './components/UserGuide';
 import SettingsForm from './components/SettingsForm';
+import { MultiCodeExamModal } from './components/MultiCodeExamModal';
 
 export type ActiveTabType = 
   | 'exam_full'
@@ -55,6 +56,7 @@ export default function App() {
   // Quản lý đề thi chuẩn CV 7991 (4 phần, trộn đề, thi thử)
   const [examData, setExamData] = useState<ExamCV7991>(SAMPLES[0].exam);
   const [isBookUploadModalOpen, setIsBookUploadModalOpen] = useState(false);
+  const [isShuffleModalOpen, setIsShuffleModalOpen] = useState(false);
 
   // API Key & Model Settings states (Gemini 3 Pro -> Gemini 3 Flash -> Gemini 2.5 Flash Auto Fallback)
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
@@ -270,6 +272,7 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
         onOpenSettings={() => setShowSettingsModal(true)}
         onOpenBookUpload={() => setIsBookUploadModalOpen(true)}
+        onOpenShuffleModal={() => setIsShuffleModalOpen(true)}
         apiKey={apiKey}
         preferredModel={preferredModel}
       />
@@ -290,12 +293,12 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. VÙNG LÀM VIỆC CHÍNH (TỐI ĐA HÓA 100% KHÔNG GIAN HIỂN THỊ - KHÔNG BỊ SIDEBAR CHIẾM DỤNG) */}
-      <main className="flex-1 overflow-y-auto p-2 sm:p-5 transition-all">
+      {/* 4. VÙNG LÀM VIỆC CHÍNH (DOCUMENT WORKSPACE - NỀN XÁM NHẠT #E8E8E8 + TRANG GIẤY TRẮNG ĐỔ BÓNG A4) */}
+      <main className="flex-1 overflow-y-auto p-3 sm:p-6 transition-all bg-[#E8E8E8] dark:bg-slate-950">
         
         {/* Nạp nhanh SGK chỉ hiển thị gọn khi ở tab Đề thi hoặc Ma trận */}
         {(activeTab === 'exam_full' || activeTab === 'matrix_full') && (
-          <div className="mb-3 max-w-7xl mx-auto">
+          <div className="mb-3 max-w-[1500px] mx-auto">
             <QuickBookUploadBar
               currentLessonName={examData.examTitle}
               currentSubject={examData.subject}
@@ -306,7 +309,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="max-w-7xl mx-auto w-full">
+        <div className="max-w-[1500px] mx-auto w-full bg-white dark:bg-slate-900 border border-[#E1DFDD] dark:border-slate-800 rounded-[4px] shadow-[0_4px_16px_rgba(0,0,0,0.10),0_1px_3px_rgba(0,0,0,0.06)] p-4 sm:p-6 min-h-[calc(100vh-165px)]">
           {/* TAB 1: ĐỀ THI CHUẨN 4 PHẦN (CV 7991) */}
           <div className={activeTab === 'exam_full' ? 'block animate-fade-in' : 'hidden'}>
             <ExamCV7991View 
@@ -441,6 +444,19 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 8. MODAL TRỘN ĐỀ MC-MIX HOÀN TOÀN OFFLINE (TẢI ĐỀ .DOC, .DOCX, .PDF) */}
+      <MultiCodeExamModal
+        isOpen={isShuffleModalOpen}
+        onClose={() => setIsShuffleModalOpen(false)}
+        exam={examData}
+        onSelectExamCode={(selected) => {
+          setExamData(selected);
+          setIsShuffleModalOpen(false);
+          setToastMessage(`Đã áp dụng mã đề ${selected.code} vào vùng soạn thảo!`);
+          setTimeout(() => setToastMessage(null), 3500);
+        }}
+      />
     </div>
   );
 }

@@ -24,7 +24,8 @@ import {
   Sun,
   Moon,
   GraduationCap,
-  ShieldCheck
+  ShieldCheck,
+  Shuffle
 } from 'lucide-react';
 import { ActiveTabType } from '../App';
 
@@ -60,6 +61,7 @@ interface WordRibbonBarProps {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenBookUpload: () => void;
+  onOpenShuffleModal?: () => void;
   apiKey: string;
   preferredModel: string;
 }
@@ -76,6 +78,7 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
   onToggleTheme,
   onOpenSettings,
   onOpenBookUpload,
+  onOpenShuffleModal,
   apiKey,
   preferredModel
 }) => {
@@ -219,15 +222,15 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
   };
 
   return (
-    <header className="bg-white dark:bg-slate-900 border-b border-slate-200/90 dark:border-slate-800 shrink-0 select-none shadow-2xs z-30 transition-all">
-      {/* 1. TOP QUICK ACCESS & TITLE BAR */}
-      <div className="h-10 px-3 sm:px-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/90 text-xs">
+    <header className="bg-white dark:bg-slate-900 border-b border-[#E1DFDD] dark:border-slate-800 shrink-0 select-none shadow-xs z-30 transition-all">
+      {/* 1. TOP QUICK ACCESS & TITLE BAR (OFFICE 365 FLUENT LIGHT THEME) */}
+      <div className="h-10 px-3 sm:px-4 flex items-center justify-between border-b border-[#E1DFDD] dark:border-slate-800 bg-[#F3F2F1] dark:bg-slate-900 text-xs text-[#242424] dark:text-slate-100">
         {/* Logo & Brand */}
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-lg bg-teal-600 text-white flex items-center justify-center shadow-xs">
+          <div className="w-6 h-6 rounded-[4px] bg-[#0F6CBD] text-white flex items-center justify-center shadow-xs">
             <GraduationCap size={15} />
           </div>
-          <span className="font-extrabold tracking-tight text-slate-800 dark:text-slate-100 text-xs uppercase flex items-center gap-2">
+          <span className="font-bold tracking-tight text-[#242424] dark:text-slate-100 text-xs uppercase flex items-center gap-2">
             TRỢ LÍ TẠO ĐỀ
           </span>
         </div>
@@ -237,26 +240,26 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
           {/* Nạp Sách SGK */}
           <button
             onClick={onOpenBookUpload}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[11px] font-semibold text-[#242424] dark:text-slate-200 bg-white dark:bg-slate-800 border border-[#E1DFDD] dark:border-slate-700 hover:bg-[#EDEBE9] dark:hover:bg-slate-700 transition cursor-pointer"
             title="Nạp mục lục Sách Giáo Khoa (KNTT, Cánh Diều, Chân Trời Sáng Tạo)"
           >
-            <Upload size={13} className="text-teal-600" />
+            <Upload size={13} className="text-[#0F6CBD]" />
             <span className="hidden sm:inline">Nạp Sách SGK</span>
           </button>
 
           {/* Cấu hình AI (Gemini 3 Pro / 3 Flash / 2.5 Flash Auto Fallback) */}
           <button
             onClick={onOpenSettings}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold transition ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[11px] font-semibold transition border cursor-pointer ${
               !apiKey.trim()
-                ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 animate-pulse'
-                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/70 dark:text-rose-300 animate-pulse'
+                : 'text-[#242424] dark:text-slate-200 bg-white dark:bg-slate-800 border-[#E1DFDD] dark:border-slate-700 hover:bg-[#EDEBE9] dark:hover:bg-slate-700'
             }`}
             title="Cấu hình Gemini AI (Gemini 3 Pro, 3 Flash, 2.5 Flash Auto-Fallback)"
           >
             <Sparkles size={13} className="text-amber-500" />
             <span className="hidden sm:inline">AI Fallback:</span>
-            <span className="font-mono text-[10px] text-teal-700 dark:text-teal-300">
+            <span className="font-mono text-[10px] text-[#0F6CBD] dark:text-teal-300">
               {preferredModel === 'auto' ? 'Auto (3 Pro/Flash)' : preferredModel.replace('gemini-', '')}
             </span>
           </button>
@@ -264,7 +267,7 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
           {/* Đổi giao diện Sáng / Tối */}
           <button
             onClick={onToggleTheme}
-            className="p-1 rounded-md text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition"
+            className="p-1 rounded-[4px] text-[#605E5C] hover:text-[#201F1E] dark:text-slate-400 dark:hover:text-slate-200 bg-white dark:bg-slate-800 border border-[#E1DFDD] dark:border-slate-700 hover:bg-[#EDEBE9] dark:hover:bg-slate-700 transition cursor-pointer"
             title="Chuyển chế độ Sáng / Tối"
           >
             {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
@@ -273,27 +276,43 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
           {/* Thu gọn / Mở rộng thanh Ribbon */}
           <button
             onClick={onToggleRibbon}
-            className="p-1 rounded-md text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition"
-            title={isRibbonCollapsed ? "Mở rộng thanh Ribbon" : "Thu gọn thanh Ribbon (Tối đa vùng làm việc)"}
+            className="w-[28px] h-[28px] flex items-center justify-center rounded-[4px] text-[#605E5C] hover:text-[#201F1E] dark:text-slate-400 dark:hover:text-slate-200 hover:bg-[#EDEBE9] dark:hover:bg-slate-700 transition cursor-pointer"
+            title={isRibbonCollapsed ? "Mở rộng thanh Ribbon (Ctrl + F1)" : "Thu gọn thanh Ribbon (Ctrl + F1)"}
           >
             {isRibbonCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
           </button>
         </div>
       </div>
 
-      {/* 2. RIBBON TABS (Thanh danh mục phong cách MS Word) */}
-      <div className="flex items-center justify-between px-2 sm:px-4 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto scrollbar-none">
-        <div className="flex items-center space-x-0.5 sm:space-x-1">
+      {/* 2. RIBBON TABS (Thanh danh mục phong cách Office 365 Light Theme) */}
+      <div 
+        role="tablist"
+        aria-label="Thanh thẻ công cụ Ribbon"
+        className="flex items-center justify-between px-2 sm:px-4 border-b border-[#E1DFDD] dark:border-slate-800 bg-[#F3F2F1] dark:bg-slate-900 overflow-x-auto scrollbar-none h-[36px]"
+      >
+        <div className="flex items-center h-full">
+          {/* NÚT TỆP BACKSTAGE CHUẨN OFFICE 365 */}
+          <button
+            role="tab"
+            aria-selected={false}
+            onClick={() => onSelectTab('guide')}
+            className="px-3.5 py-1 my-0.5 mr-1.5 rounded-[4px] text-xs font-bold tracking-wide uppercase transition bg-[#0F6CBD] hover:bg-[#115EA3] text-white shadow-xs cursor-pointer shrink-0"
+          >
+            Tệp
+          </button>
+
           {RIBBON_TABS.map(tab => {
             const isActive = activeCategory === tab.id;
             return (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => handleCategoryClick(tab.id)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold transition-all relative rounded-t-lg ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 h-[36px] text-xs transition cursor-pointer whitespace-nowrap ${
                   isActive
-                    ? 'text-teal-700 dark:text-teal-300 bg-slate-100/90 dark:bg-slate-800/90 border-t-2 border-teal-600'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    ? 'font-bold text-[#242424] dark:text-white bg-white dark:bg-slate-900 border-b-[3px] border-[#0F6CBD] dark:border-sky-400 -mb-[1px]'
+                    : 'font-semibold text-[#424242] dark:text-slate-400 hover:text-[#201F1E] dark:hover:text-slate-200 hover:bg-[#EDEBE9] dark:hover:bg-slate-800/60 border-b-[3px] border-transparent'
                 }`}
               >
                 <span>{tab.icon}</span>
@@ -307,16 +326,16 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
         <div className="flex items-center gap-1 py-1 pl-3 shrink-0">
           <button
             onClick={onAdd}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900 border border-teal-200 dark:border-teal-800 transition active:scale-95 shadow-2xs"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-white hover:bg-[#EDEBE9] dark:bg-slate-800 dark:hover:bg-slate-700 text-[#242424] dark:text-slate-200 border border-[#E1DFDD] dark:border-slate-700 transition cursor-pointer shadow-2xs"
             title="Thêm mới (Ctrl+Alt+N)"
           >
-            <Plus size={13} className="text-teal-600" />
+            <Plus size={13} className="text-[#0F6CBD]" />
             <span>Thêm</span>
           </button>
 
           <button
             onClick={onDelete}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 transition active:scale-95 shadow-2xs"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-white hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950 text-rose-700 dark:text-rose-300 border border-[#E1DFDD] dark:border-slate-700 transition cursor-pointer shadow-2xs"
             title="Xóa nội dung (Ctrl+Alt+Del)"
           >
             <Trash2 size={13} className="text-rose-600" />
@@ -325,31 +344,42 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
 
           <button
             onClick={onReset}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-800 transition active:scale-95 shadow-2xs"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-white hover:bg-amber-50 dark:bg-slate-800 dark:hover:bg-amber-950 text-amber-700 dark:text-amber-300 border border-[#E1DFDD] dark:border-slate-700 transition cursor-pointer shadow-2xs"
             title="Làm lại về mặc định (Ctrl+Alt+R)"
           >
             <RotateCcw size={13} className="text-amber-600" />
             <span>Làm lại</span>
           </button>
+
+          {onOpenShuffleModal && (
+            <button
+              onClick={onOpenShuffleModal}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-[4px] text-[11px] font-bold bg-[#0F6CBD] hover:bg-[#115EA3] text-white shadow-xs transition cursor-pointer ml-1.5"
+              title="Mở công cụ Trộn Đề Thi Hoán Vị (McMIX) - Tải file .doc, .docx, .pdf lên để trộn hoàn toàn Offline"
+            >
+              <Shuffle size={13} className="text-sky-200" />
+              <span>Trộn Đề McMIX</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 3. RIBBON COMMAND PANEL (Thanh công cụ chi tiết dưới tab - có thể thu gọn) */}
+      {/* 3. RIBBON COMMAND PANEL (Thanh công cụ chi tiết dưới tab - chuẩn Command Groups & Group Labels) */}
       {!isRibbonCollapsed && (
-        <div className="px-2 sm:px-4 py-2 bg-slate-50/90 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 overflow-x-auto flex items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="px-2 sm:px-4 py-1.5 bg-white dark:bg-slate-900 border-b border-[#E1DFDD] dark:border-slate-800 overflow-x-auto flex items-stretch gap-2 min-h-[96px] shadow-[0_2px_4px_rgba(0,0,0,0.04)] animate-in fade-in slide-in-from-top-1 duration-150">
           {CATEGORY_GROUPS[activeCategory].map((group, gIdx) => (
-            <div key={gIdx} className="flex items-center gap-1.5 shrink-0 border-r border-slate-200 dark:border-slate-800 pr-3 last:border-r-0">
-              <div className="flex items-center gap-1">
+            <div key={gIdx} className="flex flex-col justify-between px-2 shrink-0 border-r border-[#E1DFDD] dark:border-slate-800 last:border-r-0">
+              <div className="flex items-center gap-1 flex-1">
                 {group.tools.map(tool => {
                   const isToolActive = activeTab === tool.id;
                   return (
                     <button
                       key={tool.id}
                       onClick={() => onSelectTab(tool.id)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-xl text-center transition-all min-w-[76px] sm:min-w-[88px] ${
+                      className={`flex flex-col items-center justify-center p-1.5 rounded-[4px] text-center transition min-w-[76px] sm:min-w-[88px] h-[64px] cursor-pointer ${
                         isToolActive
-                          ? 'bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-200 shadow-xs border border-teal-300 dark:border-teal-700 ring-1 ring-teal-200 dark:ring-teal-900 font-extrabold'
-                          : 'text-slate-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-800/60 font-semibold border border-transparent'
+                          ? 'bg-[#EFF6FC] dark:bg-slate-800 text-[#0F6CBD] dark:text-sky-300 shadow-2xs border border-[#0F6CBD] dark:border-sky-500 font-bold'
+                          : 'text-[#242424] dark:text-slate-300 hover:bg-[#EDEBE9] dark:hover:bg-slate-800/60 font-semibold border border-transparent'
                       }`}
                       title={tool.label}
                     >
@@ -358,7 +388,7 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
                           {tool.icon}
                         </span>
                         {tool.badge && (
-                          <span className="absolute -top-1.5 -right-3 text-[8px] font-bold px-1 rounded-full bg-teal-600 text-white">
+                          <span className="absolute -top-1.5 -right-3 text-[8px] font-bold px-1 rounded-[3px] bg-[#0F6CBD] text-white">
                             {tool.badge}
                           </span>
                         )}
@@ -369,6 +399,9 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
                     </button>
                   );
                 })}
+              </div>
+              <div className="text-[11px] font-normal text-[#605E5C] dark:text-slate-400 text-center pb-0.5 mt-auto select-none">
+                {group.groupTitle}
               </div>
             </div>
           ))}

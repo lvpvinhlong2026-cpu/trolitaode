@@ -21,6 +21,33 @@ export interface ShuffledExamPackage {
   };
 }
 
+export interface ShuffleOptions {
+  shuffleQuestions?: boolean;
+  shuffleOptions?: boolean;
+  lockFixedOptions?: boolean; // Khóa phương án "Tất cả đều đúng / Cả A và B..." chuẩn McMIX
+  shufflePart2SubItems?: boolean;
+}
+
+export const isFixedOption = (text: string): boolean => {
+  const t = (text || '').toLowerCase().trim();
+  return (
+    t.includes('cả a và b') ||
+    t.includes('cả a, b') ||
+    t.includes('cả a,b') ||
+    t.includes('cả 3') ||
+    t.includes('tất cả đều') ||
+    t.includes('tất cả các') ||
+    t.includes('tất cả đáp án') ||
+    t.includes('tất cả phương án') ||
+    t.includes('không có đáp án nào') ||
+    t.includes('không có câu nào') ||
+    t.includes('không câu nào') ||
+    t.includes('cả a, b, c') ||
+    t.includes('a và b đều') ||
+    t.includes('a, b đều')
+  );
+};
+
 // Hàm hoán vị ngẫu nhiên có kiểm soát (Fisher-Yates)
 function shuffleArray<T>(array: T[], seed: number): T[] {
   const arr = [...array];
@@ -36,11 +63,20 @@ function shuffleArray<T>(array: T[], seed: number): T[] {
 
 /**
  * Trộn một đề thi thành nhiều mã đề (mặc định: 101, 102, 103, 104)
+ * Tích hợp công nghệ khóa phương án chuẩn McMIX
  */
 export function shuffleExamToMultipleCodes(
   baseExam: ExamCV7991,
-  targetCodes: string[] = ['101', '102', '103', '104']
+  targetCodes: string[] = ['101', '102', '103', '104'],
+  options: ShuffleOptions = {}
 ): ShuffledExamPackage {
+  const {
+    shuffleQuestions = true,
+    shuffleOptions = true,
+    lockFixedOptions = true,
+    shufflePart2SubItems = true
+  } = options;
+
   const resultExams: ExamCV7991[] = [];
 
   targetCodes.forEach((code, codeIdx) => {
@@ -54,9 +90,19 @@ export function shuffleExamToMultipleCodes(
       shuffledP1 = baseExam.part1Questions.map((q, idx) => ({ ...q, number: idx + 1 }));
     } else {
       // Đảo thứ tự câu hỏi
-      const questionsShuffled = shuffleArray(baseExam.part1Questions, seed);
+      const questionsShuffled = shuffleQuestions 
+        ? shuffleArray(baseExam.part1Questions, seed) 
+        : [...baseExam.part1Questions];
 
       shuffledP1 = questionsShuffled.map((q, qIndex) => {
+        if (!shuffleOptions) {
+          return {
+            ...q,
+            id: `${code}_p1_${qIndex + 1}`,
+            number: qIndex + 1
+          };
+        }
+
         // Đảo thứ tự 4 đáp án A, B, C, D
         const originalEntries: { key: 'A' | 'B' | 'C' | 'D'; text: string; isCorrect: boolean }[] = [
           { key: 'A', text: q.options.A, isCorrect: q.correctAnswer === 'A' },
@@ -65,7 +111,18 @@ export function shuffleExamToMultipleCodes(
           { key: 'D', text: q.options.D, isCorrect: q.correctAnswer === 'D' },
         ];
 
-        const shuffledEntries = shuffleArray(originalEntries, seed + qIndex * 37);
+        // Chuẩn McMIX: Nếu phương án D là phương án cố định, không đảo D
+        const isDFixed = lockFixedOptions && isFixedOption(q.options.D);
+        let shuffledEntries: typeof originalEntries;
+
+        if (isDFixed) {
+          const abcEntries = originalEntries.slice(0, 3);
+          const shuffledAbc = shuffleArray(abcEntries, seed + qIndex * 37);
+          shuffledEntries = [...shuffledAbc, originalEntries[3]];
+        } else {
+          shuffledEntries = shuffleArray(originalEntries, seed + qIndex * 37);
+        }
+
         const keys: ('A' | 'B' | 'C' | 'D')[] = ['A', 'B', 'C', 'D'];
         
         let newCorrectAnswer: 'A' | 'B' | 'C' | 'D' = 'A';
@@ -93,10 +150,15 @@ export function shuffleExamToMultipleCodes(
     if (codeIdx === 0) {
       shuffledP2 = baseExam.part2Questions.map((q, idx) => ({ ...q, number: idx + 1 }));
     } else {
-      const p2Shuffled = shuffleArray(baseExam.part2Questions, seed + 101);
+      const p2Shuffled = shuffleQuestions 
+        ? shuffleArray(baseExam.part2Questions, seed + 101) 
+        : [...baseExam.part2Questions];
+
       shuffledP2 = p2Shuffled.map((q, qIndex) => {
         // Đảo thứ tự các mệnh đề con a, b, c, d
-        const stShuffled = shuffleArray(q.statements, seed + qIndex * 53);
+        const stShuffled = shufflePart2SubItems 
+          ? shuffleArray(q.statements, seed + qIndex * 53) 
+          : [...q.statements];
         const subIds: ('a' | 'b' | 'c' | 'd')[] = ['a', 'b', 'c', 'd'];
         const newStatements = stShuffled.map((st, sIdx) => ({
           ...st,
@@ -117,7 +179,10 @@ export function shuffleExamToMultipleCodes(
     if (codeIdx === 0) {
       shuffledP3 = baseExam.part3Questions.map((q, idx) => ({ ...q, number: idx + 1 }));
     } else {
-      const p3Shuffled = shuffleArray(baseExam.part3Questions, seed + 203);
+      const p3Shuffled = shuffleQuestions 
+        ? shuffleArray(baseExam.part3Questions, seed + 203) 
+        : [...baseExam.part3Questions];
+
       shuffledP3 = p3Shuffled.map((q, qIndex) => ({
         ...q,
         id: `${code}_p3_${qIndex + 1}`,

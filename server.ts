@@ -344,10 +344,75 @@ async function startServer() {
     }
   });
 
+  // Mẫu Đáp án & Hướng dẫn giải chuẩn hệ thống dạng BẢNG CUỐI ĐỀ (mau_de_he_thong)
+  const MAU_DE_HE_THONG_TABLE_PROMPT = `
+- YÊU CẦU BẮT BUỘC VỀ ĐÁP ÁN & LỜI GIẢI (TUYỆT ĐỐI THEO MẪU HỆ THỐNG - mau_de_he_thong):
+Sau khi kết thúc các câu hỏi của đề thi, BẮT BUỘC PHẢI CÓ DÒNG PHÂN CÁCH NÀY TRƯỚC TIÊN:
+---------------------------HẾT------------------------
+
+Sau đó, phần BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT BẮT BUỘC TRÌNH BÀY CHÍNH XÁC 100% THEO CẤU TRÚC 3 PHẦN DƯỚI ĐÂY (KHÔNG ĐƯỢC THAY ĐỔI CẤU TRÚC BẢNG VÀ TIÊU ĐỀ):
+
+PHẦN I. Câu trắc nghiệm một đáp án đúng 
+| Câu   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | 10   | 11   | 12   |
+| Chọn   | D   | A   | ... |
+
+Lời giải
+Câu 1: A đúng vì….	
+Câu 2: B đúng vì….	
+
+PHẦN II. Câu trắc nghiệm đúng sai. 
+| Câu 1   | Câu 2   | Câu 3   | Câu 4   |
+| a) Đ   | a) Đ   | a) Đ   | a) Đ   |
+| b) S   | b) S   | b) S   | b) S   |
+| c) S   | c) S   | c) S   | c) S   |
+| d) Đ   | d) S   | d) Đ   | d) Đ   |
+
+Lời giải
+Câu 1: A đúng vì….	
+Câu 2: B đúng vì….	
+
+PHẦN III. Câu trắc nghiệm trả lời ngắn. 
+| Câu   | 1   | 2   | 3   | 4   | 5   | 6   |
+| Chọn   | 10   | 31   | ... |
+
+Lời giải
+Câu 1: Ta có ….	
+Câu 2: Ta có ….	
+`;
+
+  // Mẫu Đề Rút Gọn (Gạch chân đáp án đúng <u>A.</u>, <u>a)</u> và Lời giải liền sau câu hỏi)
+  const MAU_DE_HE_THONG_INLINE_PROMPT = `
+- YÊU CẦU BẮT BUỘC VỀ ĐÁP ÁN & LỜI GIẢI (THEO MẪU ĐỀ RÚT GỌN - GẠCH CHÂN ĐÁP ÁN ĐÚNG LIỀN CÂU):
+Thay vì có bảng đáp án ở cuối, hãy trình bày đáp án và lời giải liền ngay sau mỗi câu hỏi:
+
+1. PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn:
+- Gạch chân đáp án đúng bằng thẻ <u>...</u> (Ví dụ: <u>A.</u> Số 2 là số nguyên.   B. Số 2 là số hữu tỉ.)
+- Ngay dưới các phương án, ghi:
+Lời giải:
+Mệnh đề A đúng vì...
+
+2. PHẦN II. Câu trắc nghiệm đúng sai:
+- Gạch chân các ý ĐÚNG bằng thẻ <u>...</u> (Ví dụ nếu ý a và c đúng thì ghi: <u>a)</u> ..., b) ..., <u>c)</u> ..., d) ...)
+- Ngay dưới 4 ý, ghi:
+Lời giải
+A đúng vì.... (hoặc a) Đúng vì...)
+
+3. PHẦN III. Câu trắc nghiệm trả lời ngắn:
+- Ngay dưới câu hỏi, ghi:
+Lời giải
+Đáp án: [Giá trị đáp án, ví dụ: 5 hoặc 31]
+Giải thích:
+Ta có như sau:....
+`;
+
+  const getAnswerPrompt = (format: string = 'table') => {
+    return format === 'inline' ? MAU_DE_HE_THONG_INLINE_PROMPT : MAU_DE_HE_THONG_TABLE_PROMPT;
+  };
+
   // File (PDF/Image) to DOCX Convert Proxy
   app.post("/api/convert-pdf", async (req, res) => {
     try {
-      const { pdfBase64, mimeType = "application/pdf", files, parsingMode = "normal", customPrompt = "", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", textContent = "", subject = "", grade = "", lesson = "", keepOriginalDiagrams = false } = req.body;
+      const { pdfBase64, mimeType = "application/pdf", files, parsingMode = "normal", customPrompt = "", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", textContent = "", subject = "", grade = "", lesson = "", keepOriginalDiagrams = false, answerFormat = "table" } = req.body;
       
       let targetFiles = files;
       if (!targetFiles && pdfBase64) {
@@ -446,7 +511,7 @@ ${keepOriginalDiagrams ? `- BẮT BUỘC GIỮ NGUYÊN HÌNH ẢNH / BẢNG BI�
 ${examCount > 1 ? `- Phân tách các đề bằng dấu gạch ngang (---) và tiêu đề rõ ràng (ví dụ: Đề 1, Đề 2...).` : ''}
 - LỆNH TỐI CẦN THIẾT: TUYỆT ĐỐI KHÔNG ĐƯỢC QUÊN PHẦN ĐÁP ÁN/LỜI GIẢI NẾU CÓ YÊU CẦU. KHÔNG giải thích lằng nhằng, chỉ xuất ra đề thi${includeShortSolution ? ' và ĐẦY ĐỦ đáp án/lời giải ở cuối' : ''}.
 - YÊU CẦU VỀ LỜI GIẢI (QUAN TRỌNG):
-${includeShortSolution ? `  + BẮT BUỘC: Phải kèm theo "Đáp án ngắn gọn" (bảng đáp án hoặc giải thích cực ngắn) ở phần cuối cùng của tài liệu.` : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}`;
+${includeShortSolution ? getAnswerPrompt(answerFormat) : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}`;
       } else if (parsingMode === "matrix_exam") {
         prompt = `Bạn là một chuyên gia giáo dục. Hãy tạo ra MỘT ĐỀ THI ĐÚNG CHUẨN FORMAT 2025 MỚI NHẤT bám sát cấu trúc Ma Trận Đặc Tả sau đây:
 ${matrixConfig}
@@ -471,7 +536,7 @@ YÊU CẦU VỀ NỘI DUNG:
 ${contextSuggestion ? `- YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: Hãy phân tích sâu về ngữ cảnh sau đây để tạo đề dễ hiểu, phù hợp tính sư phạm (áp dụng linh hoạt cho mọi bộ môn): "${contextSuggestion}"` : ''}
 - LỆNH TỐI CẦN THIẾT: TUYỆT ĐỐI KHÔNG ĐƯỢC QUÊN PHẦN ĐÁP ÁN/LỜI GIẢI NẾU CÓ YÊU CẦU. KHÔNG giải thích lằng nhằng, chỉ xuất ra đề thi${includeShortSolution ? ' và ĐẦY ĐỦ đáp án/lời giải ở cuối' : ''}.
 - YÊU CẦU VỀ LỜI GIẢI (QUAN TRỌNG):
-${includeShortSolution ? `  + BẮT BUỘC: Phải kèm theo "Đáp án ngắn gọn" (bảng đáp án hoặc giải thích cực ngắn) ở phần cuối cùng của tài liệu.` : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}`;
+${includeShortSolution ? getAnswerPrompt(answerFormat) : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}`;
       } else if (parsingMode === "standardize_exam") {
         prompt = `Bạn là một chuyên gia giáo dục. Nhiệm vụ của bạn là đọc nội dung đề thi/tài liệu được cung cấp (dưới dạng văn bản hoặc hình ảnh) và CHUẨN HÓA lại toàn bộ theo đúng chuẩn cấu trúc thi mới nhất. BẠN PHẢI CHUẨN HÓA TẤT CẢ CÁC CÂU HỎI TRONG ĐỀ GỐC, KHÔNG ĐƯỢC BỎ SÓT, RÚT GỌN HAY LÀM TẮT BẤT KỲ CÂU NÀO.
 
@@ -491,7 +556,7 @@ YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG & MỨC ĐỘ:
    - Không tự ý thay đổi số liệu đề gốc, chỉ chuẩn hóa format và đánh giá mức độ.
 
 4. Yêu cầu về Lời giải/Đáp án (QUAN TRỌNG):
-${includeShortSolution ? `   - BẮT BUỘC: Ở phần cuối cùng của tài liệu, chỉ cung cấp bảng đáp án và hướng dẫn giải cực kỳ ngắn gọn, dưới tiêu đề "Đáp án ngắn gọn:".` : '   - KHÔNG cung cấp lời giải, chỉ xuất ra đề thi.'}
+${includeShortSolution ? getAnswerPrompt(answerFormat) : '   - KHÔNG cung cấp lời giải, chỉ xuất ra đề thi.'}
 
 - KHÔNG giải thích lằng nhằng, chỉ xuất ra đề thi${includeShortSolution ? ' và đáp án/lời giải' : ''}.`;
       } else if (parsingMode === "solve_exam_tutor") {
@@ -621,7 +686,7 @@ ${contextSuggestion ? `6. YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: ${contextSu
   // Word (Text+MathML) to Markdown+LaTeX Convert Proxy
   app.post("/api/convert-word", async (req, res) => {
     try {
-      const { textContent, parsingMode = "normal", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", subject = "", grade = "", lesson = "", keepOriginalDiagrams = false } = req.body;
+      const { textContent, parsingMode = "normal", model = "gemini-1.5-pro", apiKey, includeShortSolution = false, examCount = 1, contextSuggestion = "", matrixConfig = "[]", continueFromText = "", subject = "", grade = "", lesson = "", keepOriginalDiagrams = false, answerFormat = "table" } = req.body;
       if (!textContent && parsingMode !== "matrix_exam") {
         return res.status(400).json({ error: "Không tìm thấy dữ liệu văn bản." });
       }
@@ -670,7 +735,7 @@ ${keepOriginalDiagrams ? `- BẮT BUỘC GIỮ NGUYÊN HÌNH ẢNH / BẢNG BI�
 - 4 đáp án A, B, C, D rõ ràng.
 ${examCount > 1 ? `- Phân tách các đề bằng dấu gạch ngang (---) và tiêu đề rõ ràng (ví dụ: Đề 1, Đề 2...).` : ''}
 - YÊU CẦU VỀ LỜI GIẢI (QUAN TRỌNG):
-${includeShortSolution ? `  + BẮT BUỘC: Phải kèm theo "Đáp án ngắn gọn" (bảng đáp án hoặc giải thích cực ngắn) ở phần cuối cùng của tài liệu.` : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}
+${includeShortSolution ? getAnswerPrompt(answerFormat) : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}
 - KHÔNG thêm giải thích thừa.`;
       } else if (parsingMode === "matrix_exam") {
         prompt = `Bạn là một chuyên gia giáo dục. Hãy tạo ra MỘT ĐỀ THI ĐÚNG CHUẨN FORMAT 2025 MỚI NHẤT bám sát cấu trúc Ma Trận Đặc Tả sau đây:
@@ -697,7 +762,7 @@ TUYỆT ĐỐI KHÔNG ĐƯỢC LÀM TẮT, KHÔNG ĐƯỢC RÚT GỌN, PHẢI SI
 ${contextSuggestion ? `- YÊU CẦU ĐẶC BIỆT TỪ GIÁO VIÊN: Hãy phân tích sâu về ngữ cảnh sau đây để tạo đề dễ hiểu, phù hợp tính sư phạm (áp dụng linh hoạt cho mọi bộ môn): "${contextSuggestion}"` : ''}
 - LỆNH TỐI CẦN THIẾT: TUYỆT ĐỐI KHÔNG ĐƯỢC QUÊN PHẦN ĐÁP ÁN/LỜI GIẢI NẾU CÓ YÊU CẦU. KHÔNG giải thích lằng nhằng, chỉ xuất ra đề thi${includeShortSolution ? ' và ĐẦY ĐỦ đáp án/lời giải ở cuối' : ''}.
 - YÊU CẦU VỀ LỜI GIẢI (QUAN TRỌNG):
-${includeShortSolution ? `  + BẮT BUỘC: Phải kèm theo "Đáp án ngắn gọn" (bảng đáp án hoặc giải thích cực ngắn) ở phần cuối cùng của tài liệu.` : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}`;
+${includeShortSolution ? getAnswerPrompt(answerFormat) : `  + BẮT BUỘC: KHÔNG cung cấp lời giải hay đáp án, chỉ sinh đề thi.`}`;
       } else if (parsingMode === "standardize_exam") {
         prompt = `Bạn là một chuyên gia giáo dục. Nhiệm vụ của bạn là đọc nội dung đề thi/tài liệu được cung cấp (dưới dạng văn bản hoặc hình ảnh) và CHUẨN HÓA lại toàn bộ theo đúng chuẩn cấu trúc thi mới nhất. BẠN PHẢI CHUẨN HÓA TẤT CẢ CÁC CÂU HỎI TRONG ĐỀ GỐC, KHÔNG ĐƯỢC BỎ SÓT, RÚT GỌN HAY LÀM TẮT BẤT KỲ CÂU NÀO.
 
@@ -717,7 +782,7 @@ YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG & MỨC ĐỘ:
    - Không tự ý thay đổi số liệu đề gốc, chỉ chuẩn hóa format và đánh giá mức độ.
 
 4. Yêu cầu về Lời giải/Đáp án (QUAN TRỌNG):
-${includeShortSolution ? `   - BẮT BUỘC: Ở phần cuối cùng của tài liệu, chỉ cung cấp bảng đáp án và hướng dẫn giải cực kỳ ngắn gọn, dưới tiêu đề "Đáp án ngắn gọn:".` : '   - KHÔNG cung cấp lời giải, chỉ xuất ra đề thi.'}
+${includeShortSolution ? getAnswerPrompt(answerFormat) : '   - KHÔNG cung cấp lời giải, chỉ xuất ra đề thi.'}
 
 - KHÔNG giải thích lằng nhằng, chỉ xuất ra đề thi${includeShortSolution ? ' và đáp án/lời giải' : ''}.`;
       } else if (parsingMode === "solve_exam_tutor") {

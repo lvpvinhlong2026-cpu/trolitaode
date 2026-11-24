@@ -10,6 +10,7 @@ import {
   WidthType, 
   BorderStyle, 
   AlignmentType,
+  UnderlineType,
   Math as DocxMath,
   MathRun,
   MathFraction,
@@ -359,9 +360,56 @@ export function dataUrlToBytes(dataUrl: string): Uint8Array {
  * Phân tích một dòng văn bản chứa cả chữ thường lẫn các công thức LaTeX ($...$, $$...$$, \(...\))
  * thành danh sách ParagraphChild gồm TextRun và DocxMath
  */
+function parseFormattedTextRuns(text: string, defaultBold: boolean): ParagraphChild[] {
+  const runs: ParagraphChild[] = [];
+  if (!text) return runs;
+
+  // Regex tách các thẻ HTML <u>...</u>, <b>...</b>, và markdown **...**
+  const regex = /(<u>[\s\S]*?<\/u>|\*\*[\s\S]*?\*\*|<b>[\s\S]*?<\/b>)/gi;
+  const parts = text.split(regex);
+
+  parts.forEach(part => {
+    if (!part) return;
+    if (part.startsWith('<u>') && part.endsWith('</u>')) {
+      const inner = part.slice(3, -4).replace(/\*\*/g, '').replace(/<\/?b>/gi, '');
+      runs.push(new TextRun({
+        text: inner,
+        bold: true,
+        underline: { type: UnderlineType.SINGLE },
+        color: '0055AA', // Màu xanh lam đậm cho đáp án gạch chân chuẩn giáo viên
+        font: 'Times New Roman',
+        size: 24
+      }));
+    } else if (part.startsWith('<b>') && part.endsWith('</b>')) {
+      runs.push(new TextRun({
+        text: part.slice(3, -4),
+        bold: true,
+        font: 'Times New Roman',
+        size: 24
+      }));
+    } else if (part.startsWith('**') && part.endsWith('**')) {
+      runs.push(new TextRun({
+        text: part.slice(2, -2),
+        bold: true,
+        font: 'Times New Roman',
+        size: 24
+      }));
+    } else {
+      runs.push(new TextRun({
+        text: part,
+        bold: defaultBold,
+        font: 'Times New Roman',
+        size: 24
+      }));
+    }
+  });
+
+  return runs;
+}
+
 export function parseTextAndMathRuns(line: string, isQuestionHeader = false): ParagraphChild[] {
   const children: ParagraphChild[] = [];
-  let remaining = line.replace(/<b>|<\/b>/gi, '').trim();
+  let remaining = line.trim();
 
   // Regex nhận diện công thức LaTeX:
   // 1. $$ ... $$
@@ -375,38 +423,14 @@ export function parseTextAndMathRuns(line: string, isQuestionHeader = false): Pa
     if (!match || match.index === undefined) {
       // Phần còn lại chỉ là text thuần
       if (remaining) {
-        children.push(new TextRun({
-          text: remaining.replace(/\*\*/g, ''),
-          bold: isQuestionHeader,
-          font: 'Times New Roman',
-          size: 24
-        }));
+        children.push(...parseFormattedTextRuns(remaining, isQuestionHeader));
       }
       break;
     }
 
     const beforeMath = remaining.substring(0, match.index);
     if (beforeMath) {
-      // Xử lý in đậm markdown nếu có
-      const parts = beforeMath.split(/(\*\*.*?\*\*)/g);
-      parts.forEach(part => {
-        if (!part) return;
-        if (part.startsWith('**') && part.endsWith('**')) {
-          children.push(new TextRun({
-            text: part.slice(2, -2),
-            bold: true,
-            font: 'Times New Roman',
-            size: 24
-          }));
-        } else {
-          children.push(new TextRun({
-            text: part,
-            bold: isQuestionHeader,
-            font: 'Times New Roman',
-            size: 24
-          }));
-        }
-      });
+      children.push(...parseFormattedTextRuns(beforeMath, isQuestionHeader));
     }
 
     // Bóc tách nội dung công thức LaTeX
@@ -630,7 +654,81 @@ export async function buildExamDocxBlob(
       }
     }
 
-    // B. XỬ LÝ TIÊU ĐỀ PHẦN / BẢNG ĐÁP ÁN
+    // B. XỬ LÝ DÒNG PHÂN CÁCH HẾT ĐỀ
+    if (/^-{3,}\s*HẾT\s*-{3,}$/i.test(rawLine) || rawLine.includes('---------------------------HẾT------------------------')) {
+      docParagraphs.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 240, after: 200 },
+          children: [
+            new TextRun({
+              text: '---------------------------HẾT------------------------',
+              bold: true,
+              font: 'Times New Roman',
+              size: 24
+            })
+          ]
+        })
+      );
+      continue;
+    }
+
+    // C. XỬ LÝ BẢNG BIỂU MARKDOWN (| Câu | 1 | 2 | ...)
+    if (rawLine.startsWith('|') && rawLine.endsWith('|')) {
+      const tableLines: string[] = [];
+      let j = i;
+      while (j < lines.length && lines[j].trim().startsWith('|') && lines[j].trim().endsWith('|')) {
+        tableLines.push(lines[j].trim());
+        j++;
+      }
+      i = j - 1; // Cập nhật chỉ số dòng đã duyệt
+
+      // Lọc các dòng dữ liệu (loại bỏ dòng gạch nối |---|---|)
+      const validRows = tableLines.filter(l => !l.replace(/[|\s-:]/g, '') == false);
+      if (validRows.length > 0) {
+        const docxRows: TableRow[] = [];
+        validRows.forEach((rowStr, rIdx) => {
+          const cells = rowStr.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+          if (cells.length > 0) {
+            const isHeaderRow = rIdx === 0;
+            const tableCells: TableCell[] = cells.map(cellText => {
+              const isCellBold = isHeaderRow || cellText.toLowerCase().includes('câu') || cellText.toLowerCase().includes('chọn');
+              const cellRuns = parseTextAndMathRuns(cellText, isCellBold);
+              return new TableCell({
+                borders: {
+                  top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                  bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                  left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                  right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                },
+                margins: { top: 80, bottom: 80, left: 80, right: 80 },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: cellRuns
+                  })
+                ]
+              });
+            });
+            docxRows.push(new TableRow({ children: tableCells }));
+          }
+        });
+
+        if (docxRows.length > 0) {
+          docParagraphs.push(
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              alignment: AlignmentType.CENTER,
+              rows: docxRows
+            })
+          );
+          docParagraphs.push(new Paragraph({ text: '', spacing: { after: 120 } }));
+        }
+      }
+      continue;
+    }
+
+    // D. XỬ LÝ TIÊU ĐỀ PHẦN / BẢNG ĐÁP ÁN
     if (
       rawLine.startsWith('#') || 
       rawLine.toUpperCase().includes('PHẦN I') || 
@@ -657,7 +755,7 @@ export async function buildExamDocxBlob(
       continue;
     }
 
-    // C. XỬ LÝ CÂU HỎI VÀ NỘI DUNG CÓ CÔNG THỨC TOÁN HỌC
+    // E. XỬ LÝ CÂU HỎI VÀ NỘI DUNG CÓ CÔNG THỨC TOÁN HỌC
     const isQuestionHeader = /^(\*\*|\*|<b>)?(Câu\s+\d+|Bài\s+\d+)/i.test(rawLine);
     const runs = parseTextAndMathRuns(rawLine, isQuestionHeader);
 

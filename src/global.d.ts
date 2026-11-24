@@ -10,3 +10,8 @@ declare module 'mammoth' {
   export function extractRawText(options: { arrayBuffer: ArrayBuffer }): Promise<Result>;
   export function convertToHtml(options: { arrayBuffer: ArrayBuffer }): Promise<Result>;
 }
+
+declare module '*?url' {
+  const src: string;
+  export default src;
+}

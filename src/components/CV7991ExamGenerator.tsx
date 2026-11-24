@@ -1,12 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   FileText, Download, Copy, Check, ChevronDown, ChevronUp, Sparkles, 
   Settings, Eye, Edit3, Image as ImageIcon, Plus, Trash2, ArrowRight,
   Printer, CheckCircle2, AlertCircle, RefreshCw, Layers, Compass, HelpCircle,
   Type, Ruler, Hash, Filter, RotateCcw, BookOpen, CheckSquare, Sparkle,
   Sliders, ChevronRight as ChevronRightIcon, Lightbulb, SlidersHorizontal, Bookmark,
-  TrendingUp, Table as TableIcon, Box
+  TrendingUp, Table as TableIcon, Box, Shuffle
 } from 'lucide-react';
+import { MultiCodeExamModal } from './MultiCodeExamModal';
+import { ExamCV7991 } from '../types/pedagogy';
+import { 
+  parseExamMarkdownToCV7991, 
+  exportExamCV7991ToTableMarkdown, 
+  exportExamCV7991ToInlineMarkdown, 
+  toggleExamMarkdownFormat 
+} from '../utils/examFormatConverter';
 import { 
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, 
   WidthType, BorderStyle, AlignmentType, ImageRun, ShadingType 
@@ -19,6 +27,7 @@ import { callGeminiAI } from '../utils/gemini';
 import { KNTT_CURRICULUM } from '../utils/curriculumData';
 import { parseTextAndMathRuns, generateAutoDiagramForPlaceholder, dataUrlToBytes } from '../utils/docxExamBuilder';
 import { IntegratedDiagramModal, DiagramToolTab } from './IntegratedDiagramModal';
+import { DiagramSuggestion } from '../utils/mathDiagramSuggester';
 
 // =========================================================================
 // INTERFACES & CẤU TRÚC DỮ LIỆU ĐỘNG THEO CV 7991
@@ -1015,17 +1024,47 @@ d) Khoảng cách từ điểm $A$ đến mặt phẳng $(SBC)$ bằng $\\frac{a
 <b>Câu 2.</b> Một người thợ xây cần làm một bể chứa nước hình hộp chữ nhật không nắp có thể tích $V = 4\\text{ m}^3$, đáy có chiều dài gấp đôi chiều rộng. Chi phí vật liệu để xây đáy là $100.000\\text{ đ/m}^2$, chi phí xây thành bể là $60.000\\text{ đ/m}^2$. Tìm chiều cao của bể (đơn vị: mét) để chi phí xây dựng là thấp nhất.
 *(Đáp số: 1.15)*
 
----
+---------------------------HẾT------------------------
 
-### BẢNG ĐÁP ÁN & HƯỚNG DẪN GIẢI CHI TIẾT
+PHẦN I. Câu trắc nghiệm một đáp án đúng 
+| Câu   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | 10   | 11   | 12   |
+| Chọn   | B   | A   | A   | A   | C   | A   | B   | C   | D   | A   | B   | C   |
 
-#### PHẦN I:
-- **Câu 1:** Chọn **B**. Từ bảng biến thiên, hàm số đồng biến trên $(-1; 0)$ và $(1; +\\infty)$. Do đó chọn khoảng $(1; +\\infty)$.
-- **Câu 2:** Chọn **A**. Trong tam giác $SAC$, $O$ là trung điểm $AC$, $M$ là trung điểm $SC \\Rightarrow OM$ là đường trung bình $\\Rightarrow OM \\parallel SA$. Vì $SA \\subset (SAD) \\Rightarrow OM \\parallel (SAD)$.
-- **Câu 3:** Chọn **A**. Nhánh cuối cùng đi lên $\\Rightarrow a > 0$. Đồ thị cắt trục tung tại điểm nằm phía trên trục hoành $\\Rightarrow d = f(0) > 0$.
-- **Câu 4:** Chọn **A**. Mẫu số triệt tiêu tại $x - 1 = 0 \\Leftrightarrow x = 1$.
-- **Câu 5:** Chọn **C**. Đạo hàm đổi dấu 3 lần qua các nghiệm.
-- **Câu 6:** Chọn **A**. Ta có $f'(x) = 4x^3 - 4x = 0 \\Leftrightarrow x = 0$ hoặc $x = 1$. Tính $f(0) = -3, f(1) = -4, f(2) = 5 \\Rightarrow \\max = 5$.
+Lời giải
+Câu 1: B đúng vì từ bảng biến thiên ta thấy hàm số đồng biến trên khoảng $(1; +\infty)$ và $(-\infty; -1)$.
+Câu 2: A đúng vì đồ thị có nhánh phải đi lên ($a > 0$) và cắt trục tung tại điểm có tung độ dương ($d > 0$).
+Câu 3: A đúng vì đạo hàm đổi dấu từ âm sang dương khi qua $x = 0$.
+Câu 4: A đúng vì nghiệm của mẫu số là $x - 1 = 0 \Leftrightarrow x = 1$.
+Câu 5: C đúng vì đạo hàm $f'(x)$ đổi dấu 3 lần qua các nghiệm.
+Câu 6: A đúng vì $f'(x) = 4x^3 - 4x = 0 \Leftrightarrow x = 0$ hoặc $x = 1$. Ta có $f(0) = -3, f(1) = -4, f(2) = 5 \Rightarrow \max = 5$.
+
+PHẦN II. Câu trắc nghiệm đúng sai. 
+| Câu 1   | Câu 2   |
+| a) Đ   | a) Đ   |
+| b) S   | b) S   |
+| c) S   | c) S   |
+| d) Đ   | d) S   |
+
+Lời giải
+Câu 1:
+a) Đúng vì tập xác định là $D = \mathbb{R} \setminus \{1\}$.
+b) Sai vì $f'(x) = \frac{x^2 - 2x - 3}{(x - 1)^2}$.
+c) Sai vì tại $x = -1$ hàm số đạt cực đại và giá trị cực đại bằng $-5$ (cần kiểm tra bảng biến thiên).
+d) Đúng vì đường tiệm cận xiên là $y = x - 2$, thay toạ độ $M(2; 0)$ vào thoả mãn $0 = 2 - 2$.
+
+Câu 2:
+a) Đúng vì $SA \perp (ABCD) \Rightarrow SA \perp BC$.
+b) Sai vì góc giữa $SC$ và $(ABCD)$ là $\widehat{SCA} \neq 60^\circ$.
+c) Sai vì thể tích là $V = \frac{1}{3} a^2 \cdot a\sqrt{3} = \frac{a^3\sqrt{3}}{3}$.
+d) Sai vì khoảng cách từ điểm $A$ đến $(SBC)$ bằng $\frac{a\sqrt{3}}{2}$.
+
+PHẦN III. Câu trắc nghiệm trả lời ngắn. 
+| Câu   | 1   | 2   |
+| Chọn   | 1   | 1.15   |
+
+Lời giải
+Câu 1: Ta có $y' = 3x^2 - 6x$, $y'' = 6x - 6 = 0 \Leftrightarrow x = 1$. Vậy hoành độ điểm uốn bằng 1.
+Câu 2: Ta có thể tích $V = 2x^2 h = 4 \Rightarrow h = \frac{2}{x^2}$. Chi phí nhỏ nhất khi $x \approx 1.86 \Rightarrow h \approx 1.15$.
 `;
 }
 
@@ -1147,10 +1186,12 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
   const [diagramModalOpen, setDiagramModalOpen] = useState<boolean>(false);
   const [diagramInitialTab, setDiagramInitialTab] = useState<DiagramToolTab>('graph');
   const [targetQuestionForDiagram, setTargetQuestionForDiagram] = useState<number | string | undefined>(undefined);
+  const [diagramModalInitialSuggestion, setDiagramModalInitialSuggestion] = useState<DiagramSuggestion | undefined>(undefined);
 
-  const handleOpenDiagramModal = (tab: DiagramToolTab, questionNumber?: number | string) => {
+  const handleOpenDiagramModal = (tab: DiagramToolTab, questionNumber?: number | string, suggestion?: DiagramSuggestion) => {
     setDiagramInitialTab(tab);
     setTargetQuestionForDiagram(questionNumber);
+    setDiagramModalInitialSuggestion(suggestion);
     setDiagramModalOpen(true);
   };
 
@@ -1175,6 +1216,39 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
     const initialImgs = generateDefaultExamImages();
     return getSampleExamContent(initialImgs);
   });
+
+  // State quản lý định dạng đáp án (table: Bảng đáp án cuối đề, inline: Mẫu rút gọn gạch chân)
+  const [answerFormat, setAnswerFormat] = useState<'table' | 'inline'>('table');
+
+  // State quản lý Modal Trộn Đề McMIX
+  const [isMultiCodeModalOpen, setIsMultiCodeModalOpen] = useState(false);
+  const [shufflableExam, setShufflableExam] = useState<ExamCV7991 | null>(null);
+
+  const handleOpenShuffleModal = () => {
+    const parsed = parseExamMarkdownToCV7991(examMarkdown, {
+      examTitle: examInfo.examTitle,
+      subject: examInfo.subject,
+      academicYear: examInfo.academicYear,
+      durationMinutes: parseInt(examInfo.duration || '90', 10) || 90,
+      code: examInfo.examCode || '101'
+    });
+    setShufflableExam(parsed);
+    setIsMultiCodeModalOpen(true);
+  };
+
+  // Danh sách các câu hỏi trích xuất động từ đề thi (để chọn dán vào câu bất kỳ)
+  const allQuestionsList = useMemo(() => {
+    const matches = examMarkdown.match(/(?:<b>|<\/b>|\*\*|^|\s)(Câu\s+\d+)/gi);
+    if (!matches) {
+      return ['Câu 1', 'Câu 2', 'Câu 3', 'Câu 4', 'Câu 5', 'Câu 6', 'Câu 7', 'Câu 8', 'Câu 9', 'Câu 10', 'Câu 11', 'Câu 12'];
+    }
+    const cleanList = Array.from(
+      new Set(
+        matches.map(m => m.replace(/<b>|<\/b>|\*\*|\s/g, '').trim())
+      )
+    );
+    return cleanList.length > 0 ? cleanList : ['Câu 1', 'Câu 2', 'Câu 3', 'Câu 4', 'Câu 5', 'Câu 6', 'Câu 7', 'Câu 8', 'Câu 9', 'Câu 10', 'Câu 11', 'Câu 12'];
+  }, [examMarkdown]);
 
   // Tự động kiểm tra và nhúng ảnh nếu đề thi ban đầu chưa có
   useEffect(() => {
@@ -1982,26 +2056,78 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
 
   const handleInsertImageToQuestion = (targetQ: string, dataUrl: string, altText: string) => {
     const mdImage = `\n\n![${altText}](${dataUrl})\n\n`;
-    const targetPattern = new RegExp(`(<b>${targetQ}\\.|\\*\\*${targetQ}\\.|${targetQ}\\.)`, 'i');
+    const cleanQ = targetQ.trim();
+    const qNumMatch = cleanQ.match(/\d+/);
+    const qNum = qNumMatch ? qNumMatch[0] : '1';
+
+    const targetPattern = new RegExp(`((?:<b>|\\*\\*|^|\\s)Câu\\s*${qNum}[\\.:\\b])`, 'i');
     const match = examMarkdown.match(targetPattern);
 
     if (match && match.index !== undefined) {
-      const nextQMatch = examMarkdown.slice(match.index + 5).search(/(<b>Câu|\*\*Câu|Câu\s+\d+\.)/i);
-      let insertIndex = match.index + 5;
-      if (nextQMatch !== -1) {
-        insertIndex = match.index + 5 + nextQMatch;
-      } else {
-        insertIndex = examMarkdown.length;
-      }
+      const qStartIndex = match.index;
+      const rest = examMarkdown.slice(qStartIndex + match[0].length);
+      const nextQSearch = rest.search(/(?:<b>|\*\*|^)\s*(?:Câu\s+\d+|###\s*PHẦN|---|---------------------------HẾT)/i);
+      const qBlockEnd = nextQSearch !== -1 ? qStartIndex + match[0].length + nextQSearch : examMarkdown.length;
+      const qBlock = examMarkdown.slice(qStartIndex, qBlockEnd);
 
-      const updated = examMarkdown.slice(0, insertIndex) + mdImage + examMarkdown.slice(insertIndex);
-      setExamMarkdown(updated);
-      setCopySuccess(`Đã dán ảnh thành công vào ${targetQ}!`);
+      const imgRegex = /(!\[.*?\]\(.*?\)|\[(?:Bảng biến thiên|Đồ thị|Hình vẽ).*?\]|\((?:Hình vẽ|Bảng biến thiên).*?\))/i;
+      const imgInBlock = qBlock.match(imgRegex);
+
+      if (imgInBlock && imgInBlock.index !== undefined) {
+        const replaceStart = qStartIndex + imgInBlock.index;
+        const replaceEnd = replaceStart + imgInBlock[0].length;
+        const updated = examMarkdown.slice(0, replaceStart) + `\n\n![${altText}](${dataUrl})\n\n` + examMarkdown.slice(replaceEnd);
+        setExamMarkdown(updated);
+        setCopySuccess(`Đã thay thế và dán ảnh thành công vào ${cleanQ}!`);
+      } else {
+        const optionSearch = qBlock.search(/\n\s*(?:[A-D]\.|\([A-D]\)|[a-d]\))/);
+        let insertPoint = qBlockEnd;
+        if (optionSearch !== -1) {
+          insertPoint = qStartIndex + optionSearch;
+        }
+        const updated = examMarkdown.slice(0, insertPoint) + mdImage + examMarkdown.slice(insertPoint);
+        setExamMarkdown(updated);
+        setCopySuccess(`Đã dán ảnh thành công vào ${cleanQ}!`);
+      }
     } else {
-      setExamMarkdown(prev => prev + `\n\n${targetQ}:\n` + mdImage);
-      setCopySuccess(`Đã chèn ảnh vào cuối đề thi!`);
+      const hetIndex = examMarkdown.indexOf('---------------------------HẾT------------------------');
+      if (hetIndex !== -1) {
+        const updated = examMarkdown.slice(0, hetIndex) + `\n\n**${cleanQ}:**\n` + mdImage + '\n\n' + examMarkdown.slice(hetIndex);
+        setExamMarkdown(updated);
+      } else {
+        setExamMarkdown(prev => prev + `\n\n**${cleanQ}:**\n` + mdImage);
+      }
+      setCopySuccess(`Đã chèn ảnh vào ${cleanQ}!`);
     }
     setTimeout(() => setCopySuccess(null), 3000);
+  };
+
+  const handleRemoveImageFromQuestion = (targetQ: string) => {
+    const cleanQ = targetQ.trim();
+    const qNumMatch = cleanQ.match(/\d+/);
+    const qNum = qNumMatch ? qNumMatch[0] : '1';
+    const targetPattern = new RegExp(`((?:<b>|\\*\\*|^|\\s)Câu\\s*${qNum}[\\.:\\b])`, 'i');
+    const match = examMarkdown.match(targetPattern);
+
+    if (match && match.index !== undefined) {
+      const qStartIndex = match.index;
+      const rest = examMarkdown.slice(qStartIndex + match[0].length);
+      const nextQSearch = rest.search(/(?:<b>|\*\*|^)\s*(?:Câu\s+\d+|###\s*PHẦN|---|---------------------------HẾT)/i);
+      const qBlockEnd = nextQSearch !== -1 ? qStartIndex + match[0].length + nextQSearch : examMarkdown.length;
+      const qBlock = examMarkdown.slice(qStartIndex, qBlockEnd);
+
+      const imgRegex = /(!\[.*?\]\(.*?\))/i;
+      const imgInBlock = qBlock.match(imgRegex);
+
+      if (imgInBlock && imgInBlock.index !== undefined) {
+        const replaceStart = qStartIndex + imgInBlock.index;
+        const replaceEnd = replaceStart + imgInBlock[0].length;
+        const updated = examMarkdown.slice(0, replaceStart) + `\n\n![Bảng biến thiên]()\n\n` + examMarkdown.slice(replaceEnd);
+        setExamMarkdown(updated);
+        setCopySuccess(`Đã gỡ ảnh của ${cleanQ}. Bạn có thể vẽ lại theo gợi ý!`);
+        setTimeout(() => setCopySuccess(null), 3000);
+      }
+    }
   };
 
   // =========================================================================
@@ -2062,6 +2188,61 @@ export default function CV7991ExamGenerator({ apiKey, model, grade = 12 }: Props
         }
       });
 
+      const answerPrompt = answerFormat === 'inline'
+        ? `III. YÊU CẦU BẮT BUỘC VỀ ĐÁP ÁN & LỜI GIẢI (THEO MẪU ĐỀ RÚT GỌN - GẠCH CHÂN ĐÁP ÁN ĐÚNG LIỀN CÂU):
+Thay vì có bảng đáp án ở cuối, hãy trình bày đáp án và lời giải liền ngay sau mỗi câu hỏi:
+
+1. PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn:
+- Gạch chân đáp án đúng bằng thẻ <u>...</u> (Ví dụ: <u>A.</u> Số 2 là số nguyên.   B. Số 2 là số hữu tỉ.)
+- Ngay dưới các phương án, ghi:
+Lời giải:
+Mệnh đề A đúng vì...
+
+2. PHẦN II. Câu trắc nghiệm đúng sai:
+- Gạch chân các ý ĐÚNG bằng thẻ <u>...</u> (Ví dụ nếu ý a và c đúng thì ghi: <u>a)</u> ..., b) ..., <u>c)</u> ..., d) ...)
+- Ngay dưới 4 ý, ghi:
+Lời giải
+A đúng vì.... (hoặc a) Đúng vì...)
+
+3. PHẦN III. Câu trắc nghiệm trả lời ngắn:
+- Ngay dưới câu hỏi, ghi:
+Lời giải
+Đáp án: [Giá trị đáp án, ví dụ: 5 hoặc 31]
+Giải thích:
+Ta có như sau:....`
+        : `III. YÊU CẦU BẮT BUỘC VỀ ĐÁP ÁN & LỜI GIẢI (TUYỆT ĐỐI THEO MẪU HỆ THỐNG - mau_de_he_thong):
+Sau khi kết thúc các câu hỏi của đề thi, BẮT BUỘC PHẢI CÓ DÒNG PHÂN CÁCH NÀY TRƯỚC TIÊN:
+---------------------------HẾT------------------------
+
+Sau đó, phần BẢNG ĐÁP ÁN VÀ LỜI GIẢI CHI TIẾT BẮT BUỘC TRÌNH BÀY CHÍNH XÁC 100% THEO CẤU TRÚC 3 PHẦN DƯỚI ĐÂY (KHÔNG ĐƯỢC THAY ĐỔI CẤU TRÚC BẢNG VÀ TIÊU ĐỀ):
+
+PHẦN I. Câu trắc nghiệm một đáp án đúng 
+| Câu   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | 10   | 11   | 12   |
+| Chọn   | D   | A   | ... |
+
+Lời giải
+Câu 1: A đúng vì….	
+Câu 2: B đúng vì….	
+
+PHẦN II. Câu trắc nghiệm đúng sai. 
+| Câu 1   | Câu 2   | Câu 3   | Câu 4   |
+| a) Đ   | a) Đ   | a) Đ   | a) Đ   |
+| b) S   | b) S   | b) S   | b) S   |
+| c) S   | c) S   | c) S   | c) S   |
+| d) Đ   | d) S   | d) Đ   | d) Đ   |
+
+Lời giải
+Câu 1: A đúng vì….	
+Câu 2: B đúng vì….	
+
+PHẦN III. Câu trắc nghiệm trả lời ngắn. 
+| Câu   | 1   | 2   | 3   | 4   | 5   | 6   |
+| Chọn   | 10   | 31   | ... |
+
+Lời giải
+Câu 1: Ta có ….	
+Câu 2: Ta có ….	`;
+
       const prompt = `Bạn là chuyên gia khảo thí hàng đầu của Bộ GD&ĐT Việt Nam. Hãy soạn một ĐỀ THI TOÁN ${grade || 12} THEO ĐÚNG CẤU TRÚC CÔNG VĂN 7991 MỚI NHẤT VÀ BÁM SÁT 100% MA TRẬN & BẢN ĐẶC TẢ SAU:
 
 I. CẤU TRÚC ĐỀ THI:
@@ -2074,25 +2255,31 @@ ${part2Description}
 3. PHẦN III: Câu trắc nghiệm trả lời ngắn (Gồm 6 câu hỏi yêu cầu giải và điền kết quả số):
 ${p3TopicDetails}
 
-II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
+II. YÊU CẶU ĐẶC BIỆT KHI SOẠN THẢO:
 - BÁM SÁT 100% mô tả yêu cầu câu hỏi của Phần I, Phần II và Phần III như đã quy định ở trên.
 - Soạn thảo chuẩn Markdown và ký hiệu Toán học LaTeX đặt trong cặp dấu $...$ (ví dụ: $y = ax^3 + bx^2 + cx + d$).
-- Có ít nhất 2 câu khảo sát hàm số yêu cầu bảng biến thiên hoặc đồ thị (để lại vị trí để chèn ảnh).
+- Có ít nhất 2 câu khảo sát hàm số yêu cầu bảng biến thiên hoặc đồ thị (sử dụng placeholder ![Bảng biến thiên]() hoặc ![Đồ thị hàm số]() để hệ thống tự động sinh ảnh 300 DPI).
 - Có ít nhất 1 câu hình học không gian (khối chóp, lăng trụ, Oxyz).
-- Cuối đề BẮT BUỘC có BẢNG ĐÁP ÁN (Phần I: A/B/C/D, Phần II: Đ/S từng ý a,b,c,d, Phần III: Số kết quả) và HƯỚNG DẪN GIẢI CHI TIẾT từng câu.`;
+
+${answerPrompt}`;
 
       const result = await callGeminiAI(prompt, model);
       if (result) {
         const imgs = generateDefaultExamImages();
         let formatted = result;
         if (!formatted.includes('data:image')) {
-          formatted = formatted.replace(
-            /(Câu\s+1\..*?\n)/i,
-            `$1\n![Bảng biến thiên](${imgs.bbtDataUrl})\n`
-          ).replace(
-            /(Câu\s+3\..*?\n)/i,
-            `$1\n![Đồ thị hàm số](${imgs.graphDataUrl})\n`
-          );
+          if (imgs.bbtDataUrl) {
+            formatted = formatted.replace(
+              /(!\[(?:Bảng biến thiên|BBT)\]\(\s*\)|\[(?:Bảng biến thiên|BBT)\])/i,
+              `![Bảng biến thiên](${imgs.bbtDataUrl})`
+            );
+          }
+          if (imgs.graphDataUrl) {
+            formatted = formatted.replace(
+              /(!\[(?:Đồ thị|Đồ thị hàm số)\]\(\s*\)|\[(?:Đồ thị|Đồ thị hàm số)\])/i,
+              `![Đồ thị hàm số](${imgs.graphDataUrl})`
+            );
+          }
         }
         setExamMarkdown(formatted);
         setCurrentStep(4);
@@ -2354,7 +2541,80 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
           }
         }
 
-        if (line.startsWith('#') || line.toUpperCase().includes('PHẦN I') || line.toUpperCase().includes('PHẦN II') || line.toUpperCase().includes('PHẦN III') || line.toUpperCase().includes('ĐÁP ÁN')) {
+        // Phân tách HẾT đề thi
+        if (/^-{3,}\s*HẾT\s*-{3,}$/i.test(line) || line.includes('---------------------------HẾT------------------------')) {
+          docParagraphs.push(
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 240, after: 200 },
+              children: [
+                new TextRun({
+                  text: '---------------------------HẾT------------------------',
+                  bold: true,
+                  font: 'Times New Roman',
+                  size: 24
+                })
+              ]
+            })
+          );
+          continue;
+        }
+
+        // Bảng biểu Markdown (| Câu | 1 | 2 | ...)
+        if (line.startsWith('|') && line.endsWith('|')) {
+          const tableLines: string[] = [];
+          let j = i;
+          while (j < lines.length && lines[j].trim().startsWith('|') && lines[j].trim().endsWith('|')) {
+            tableLines.push(lines[j].trim());
+            j++;
+          }
+          i = j - 1;
+
+          const validRows = tableLines.filter(l => !l.replace(/[|\s-:]/g, '') == false);
+          if (validRows.length > 0) {
+            const docxRows: TableRow[] = [];
+            validRows.forEach((rowStr, rIdx) => {
+              const cells = rowStr.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+              if (cells.length > 0) {
+                const isHeaderRow = rIdx === 0;
+                const tableCells: TableCell[] = cells.map(cellText => {
+                  const isCellBold = isHeaderRow || cellText.toLowerCase().includes('câu') || cellText.toLowerCase().includes('chọn');
+                  const cellRuns = parseTextAndMathRuns(cellText, isCellBold);
+                  return new TableCell({
+                    borders: {
+                      top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                      bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                      left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                      right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+                    },
+                    margins: { top: 80, bottom: 80, left: 80, right: 80 },
+                    children: [
+                      new Paragraph({
+                        alignment: AlignmentType.CENTER,
+                        children: cellRuns
+                      })
+                    ]
+                  });
+                });
+                docxRows.push(new TableRow({ children: tableCells }));
+              }
+            });
+
+            if (docxRows.length > 0) {
+              docParagraphs.push(
+                new Table({
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                  alignment: AlignmentType.CENTER,
+                  rows: docxRows
+                })
+              );
+              docParagraphs.push(new Paragraph({ text: '', spacing: { after: 120 } }));
+            }
+          }
+          continue;
+        }
+
+        if (line.startsWith('#') || line.toUpperCase().includes('PHẦN I') || line.toUpperCase().includes('PHẦN II') || line.toUpperCase().includes('PHẦN III') || line.toUpperCase().includes('ĐÁP ÁN') || line.toUpperCase().includes('HƯỚNG DẪN GIẢI') || line.toUpperCase().includes('BẢNG ĐÁP ÁN')) {
           docParagraphs.push(
             new Paragraph({
               spacing: { before: 180, after: 100 },
@@ -2523,11 +2783,43 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
 
         {/* Nút hành động chính */}
         <div className="flex items-center gap-2">
+          {/* LỰA CHỌN MẪU ĐÁP ÁN: BẢNG HỆ THỐNG vs MẪU RÚT GỌN */}
+          <div className="hidden lg:flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl text-[11px] font-bold border border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                setAnswerFormat('table');
+                if (examMarkdown && !examMarkdown.includes('---------------------------HẾT------------------------')) {
+                  const res = toggleExamMarkdownFormat(examMarkdown);
+                  if (res.format === 'table') setExamMarkdown(res.newMarkdown);
+                }
+              }}
+              className={`px-2.5 py-1 rounded-lg transition ${answerFormat === 'table' ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-700'}`}
+              title="Đáp án trình bày dưới dạng 3 Bảng ở cuối đề sau dòng HẾT (chuẩn mau_de_he_thong)"
+            >
+              📋 Bảng đáp án cuối đề
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAnswerFormat('inline');
+                if (examMarkdown && examMarkdown.includes('---------------------------HẾT------------------------')) {
+                  const res = toggleExamMarkdownFormat(examMarkdown);
+                  if (res.format === 'inline') setExamMarkdown(res.newMarkdown);
+                }
+              }}
+              className={`px-2.5 py-1 rounded-lg transition ${answerFormat === 'inline' ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-700'}`}
+              title="Đáp án gạch chân <u>A.</u>, <u>a)</u> và lời giải liền sau câu hỏi (Mẫu đề rút gọn)"
+            >
+              ⚡ Mẫu rút gọn (Gạch chân)
+            </button>
+          </div>
+
           <button
             onClick={handleGenerateExamAI}
             disabled={isGeneratingAI}
             className="px-3 py-1.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition-all disabled:opacity-50"
-            title="Sử dụng trí tuệ nhân tạo Gemini để sinh đề thi hoàn chỉnh"
+            title="Sử dụng trí tuệ nhân tạo Gemini để sinh đề thi hoàn chỉnh theo đúng mẫu đã chọn"
           >
             {isGeneratingAI ? <RefreshCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
             {isGeneratingAI ? 'Đang soạn đề...' : 'AI Soạn đề tự động'}
@@ -3910,8 +4202,8 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                           onChange={e => setBbtTargetQuestion(e.target.value)}
                           className="px-2.5 py-1.5 rounded-xl border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none"
                         >
-                          {['Câu 1', 'Câu 2', 'Câu 3', 'Câu 4', 'Câu 5', 'Câu 6', 'Câu 7', 'Câu 8', 'Câu 9', 'Câu 10', 'Câu 11', 'Câu 12'].map(q => (
-                            <option key={q} value={q}>{q} (Phần I)</option>
+                          {allQuestionsList.map(q => (
+                            <option key={q} value={q}>{q}</option>
                           ))}
                         </select>
 
@@ -4165,6 +4457,32 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
                   <Box size={13} className="text-amber-600" />
                   <span>Vẽ Hình 3D (GSP)</span>
                 </button>
+
+                {/* NÚT TRỘN ĐỀ NHIỀU MÃ ĐỀ CHUẨN MCMIX */}
+                <button
+                  type="button"
+                  onClick={handleOpenShuffleModal}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-xs cursor-pointer active:scale-95"
+                  title="Trộn đề thành 4, 6, 8, 24 mã đề chuẩn McMIX (Khóa phương án cố định, Phiếu tô, Bảng ma trận soi đề)"
+                >
+                  <Shuffle size={13} className="text-emerald-200" />
+                  <span>Trộn Đề (McMIX)</span>
+                </button>
+
+                {/* NÚT CHUYỂN ĐỔI NHANH GIỮA 2 ĐỊNH DẠNG MẪU ĐỀ */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = toggleExamMarkdownFormat(examMarkdown);
+                    setExamMarkdown(res.newMarkdown);
+                    setAnswerFormat(res.format);
+                  }}
+                  className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                  title="Chuyển đổi tức thì giữa 2 chuẩn đề: Bảng đáp án cuối đề (mau_de_he_thong) vs Mẫu đề rút gọn (Gạch chân đáp án đúng)"
+                >
+                  <RefreshCw size={13} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>{examMarkdown.includes('---------------------------HẾT------------------------') ? 'Sang Mẫu rút gọn' : 'Sang Bảng đáp án'}</span>
+                </button>
               </div>
 
               <div className="text-xs text-slate-500 font-medium hidden md:block">
@@ -4204,7 +4522,22 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
 
                   {/* NỘI DUNG ĐỀ THI KÈM MATHJAX & HÌNH ẢNH */}
                   <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed">
-                    <MathJaxRenderer content={examMarkdown} inline={false} />
+                    <MathJaxRenderer 
+                      content={examMarkdown} 
+                      inline={false}
+                      allQuestions={allQuestionsList}
+                      apiKey={apiKey}
+                      model={model}
+                      onOpenDiagramTool={(type, targetQ, suggestion) => {
+                        handleOpenDiagramModal(type, targetQ, suggestion);
+                      }}
+                      onInsertDiagram={(dataUrl, targetQ, alt) => {
+                        handleInsertImageToQuestion(targetQ, dataUrl, alt || 'Hình vẽ');
+                      }}
+                      onRemoveDiagram={(targetQ) => {
+                        handleRemoveImageFromQuestion(targetQ);
+                      }}
+                    />
                   </div>
 
                 </div>
@@ -4220,12 +4553,32 @@ II. YÊU CẦU ĐẶC BIỆT KHI SOẠN THẢO:
       <IntegratedDiagramModal
         isOpen={diagramModalOpen}
         onClose={() => setDiagramModalOpen(false)}
-        onInsertImage={handleInsertDiagramToExam}
+        onInsertImage={(dataUrl, qNum) => {
+          handleInsertImageToQuestion(String(qNum || targetQuestionForDiagram || 'Câu 1'), dataUrl, 'Hình vẽ 300 DPI');
+        }}
         initialTab={diagramInitialTab}
         targetQuestionNumber={targetQuestionForDiagram}
+        allQuestions={allQuestionsList}
+        initialSuggestion={diagramModalInitialSuggestion}
         apiKey={apiKey}
         model={model}
       />
+
+      {/* MODAL TRỘN ĐỀ NHIỀU MÃ ĐỀ (MCMIX) KÈM MA TRẬN SOI ĐỀ VÀ PHIẾU TÔ */}
+      {shufflableExam && (
+        <MultiCodeExamModal
+          isOpen={isMultiCodeModalOpen}
+          onClose={() => setIsMultiCodeModalOpen(false)}
+          exam={shufflableExam}
+          onSelectExamCode={(selected) => {
+            const newMd = answerFormat === 'inline'
+              ? exportExamCV7991ToInlineMarkdown(selected)
+              : exportExamCV7991ToTableMarkdown(selected);
+            setExamMarkdown(newMd);
+            setIsMultiCodeModalOpen(false);
+          }}
+        />
+      )}
 
     </div>
   );
