@@ -333,52 +333,27 @@ ${examText}
         </div>
       )}
 
-      {/* HEADER BANNER */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-teal-800 text-white p-6 rounded-3xl shadow-md relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-bold border border-indigo-400/30">
-              <Sparkles size={14} className="text-amber-300 animate-pulse" />
-              <span>AI Trích Xuất Đề Thi Thành Ma Trận & Bản Đặc Tả</span>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-              <FileSpreadsheet className="text-teal-300" size={28} />
-              Tạo Ma Trận & Bản Đặc Tả Từ Đề Thi
-            </h1>
-            <p className="text-xs text-indigo-100/90 leading-relaxed">
-              Tải lên đề thi dưới 1 trong 5 định dạng: <strong>PDF, .DOC, .DOCX, Ảnh chụp hoặc Bản scan</strong>. 
-              AI chuyên gia sẽ tự động quét toàn văn, phân tích yêu cầu cần đạt (YCCĐ) theo CT GDPT 2018, 
-              lập bảng Ma trận (Trang 2) & Bản đặc tả (Trang 3) chuẩn 100% Công văn 7991, xuất file Word <strong>.docx</strong> chuẩn thể thức.
-            </p>
-          </div>
+      {generatedExam && (
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={handleExportDocx}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-white text-indigo-900 hover:bg-indigo-50 border border-slate-200 dark:border-slate-700 shadow-sm transition active:scale-95 cursor-pointer"
+            title="Tải về file Word (.docx) chứa cả Ma trận và Bản đặc tả"
+          >
+            <Download size={16} className="text-teal-600" />
+            <span>Tải File Word (.docx)</span>
+          </button>
 
-          <div className="flex flex-col gap-2 shrink-0">
-            {generatedExam && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExportDocx}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-white text-indigo-900 hover:bg-indigo-50 shadow-md transition active:scale-95 cursor-pointer"
-                  title="Tải về file Word (.docx) chứa cả Ma trận và Bản đặc tả"
-                >
-                  <Download size={16} className="text-teal-600" />
-                  <span>Tải File Word (.docx)</span>
-                </button>
-
-                <button
-                  onClick={handleApplyToSystem}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-teal-500 hover:bg-teal-400 text-white shadow-md transition active:scale-95 cursor-pointer"
-                  title="Nạp trực tiếp vào hệ thống để đồng bộ chỉnh sửa"
-                >
-                  <Check size={16} />
-                  <span>Áp Dụng Vào Hệ Thống</span>
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={handleApplyToSystem}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-teal-500 hover:bg-teal-400 text-white shadow-sm transition active:scale-95 cursor-pointer"
+            title="Nạp trực tiếp vào hệ thống để đồng bộ chỉnh sửa"
+          >
+            <Check size={16} />
+            <span>Áp Dụng Vào Hệ Thống</span>
+          </button>
         </div>
-      </div>
+      )}
 
       {/* KHU VỰC TẢI FILE & CẤU HÌNH THÔNG TIN ĐỀ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

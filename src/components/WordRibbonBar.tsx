@@ -4,15 +4,9 @@ import {
   Grid3X3, 
   Sparkles, 
   RefreshCw, 
-  FileSignature, 
   TrendingUp, 
   Box, 
-  BookOpen, 
-  Brain, 
-  Image as ImageIcon, 
-  FlaskConical, 
   HelpCircle, 
-  Settings, 
   Plus, 
   Trash2, 
   RotateCcw, 
@@ -24,8 +18,7 @@ import {
   Sun,
   Moon,
   GraduationCap,
-  ShieldCheck,
-  Shuffle
+  ShieldCheck
 } from 'lucide-react';
 import { ActiveTabType } from '../App';
 
@@ -61,7 +54,6 @@ interface WordRibbonBarProps {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenBookUpload: () => void;
-  onOpenShuffleModal?: () => void;
   apiKey: string;
   preferredModel: string;
 }
@@ -78,7 +70,6 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
   onToggleTheme,
   onOpenSettings,
   onOpenBookUpload,
-  onOpenShuffleModal,
   apiKey,
   preferredModel
 }) => {
@@ -227,12 +218,17 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
       <div className="h-10 px-3 sm:px-4 flex items-center justify-between border-b border-[#E1DFDD] dark:border-slate-800 bg-[#F3F2F1] dark:bg-slate-900 text-xs text-[#242424] dark:text-slate-100">
         {/* Logo & Brand */}
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-[4px] bg-[#0F6CBD] text-white flex items-center justify-center shadow-xs">
+          <div className="w-6 h-6 rounded-[4px] bg-[#0F6CBD] text-white flex items-center justify-center shadow-xs shrink-0">
             <GraduationCap size={15} />
           </div>
-          <span className="font-bold tracking-tight text-[#242424] dark:text-slate-100 text-xs uppercase flex items-center gap-2">
-            TRỢ LÍ TẠO ĐỀ
-          </span>
+          <div className="flex flex-col leading-tight">
+            <span className="font-bold tracking-tight text-[#242424] dark:text-slate-100 text-xs uppercase">
+              TRỢ LÍ TẠO ĐỀ
+            </span>
+            <span className="text-[10px] font-medium text-[#616161] dark:text-slate-400">
+              GV. Lê Vĩnh Phúc
+            </span>
+          </div>
         </div>
 
         {/* Quick Access Tools: Nạp SGK, Cấu hình AI, Đổi giao diện, Thu gọn Ribbon */}
@@ -350,17 +346,6 @@ export const WordRibbonBar: React.FC<WordRibbonBarProps> = ({
             <RotateCcw size={13} className="text-amber-600" />
             <span>Làm lại</span>
           </button>
-
-          {onOpenShuffleModal && (
-            <button
-              onClick={onOpenShuffleModal}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-[4px] text-[11px] font-bold bg-[#0F6CBD] hover:bg-[#115EA3] text-white shadow-xs transition cursor-pointer ml-1.5"
-              title="Mở công cụ Trộn Đề Thi Hoán Vị (McMIX) - Tải file .doc, .docx, .pdf lên để trộn hoàn toàn Offline"
-            >
-              <Shuffle size={13} className="text-sky-200" />
-              <span>Trộn Đề McMIX</span>
-            </button>
-          )}
         </div>
       </div>
 
