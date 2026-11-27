@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { parseMtefToLatex } from './mtefParser';
+import { normalizeMathFormula } from './mathNormalizer';
 
 /**
  * Chuyển đổi phần tử OMML (Office Math Markup Language) trong Word OpenXML sang mã LaTeX
@@ -76,7 +77,7 @@ export function ommlNodeToLatex(node: Element): string {
 
   // 7. Ký tự văn bản toán học: <m:t>
   if (tag === 't') {
-    let t = node.textContent || '';
+    let t = normalizeMathFormula(node.textContent || '');
     t = t.replace(/∞/g, '\\infty ')
          .replace(/π/g, '\\pi ')
          .replace(/α/g, '\\alpha ')
@@ -84,7 +85,6 @@ export function ommlNodeToLatex(node: Element): string {
          .replace(/±/g, '\\pm ')
          .replace(/≤/g, '\\le ')
          .replace(/≥/g, '\\ge ')
-         .replace(/≠/g, '\\ne ')
          .replace(/×/g, '\\times ')
          .replace(/·/g, '\\cdot ')
          .replace(/∈/g, '\\in ')

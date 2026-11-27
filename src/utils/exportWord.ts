@@ -1,5 +1,6 @@
 import { LessonPlan5512, ExamCV7991 } from '../types/pedagogy';
 import katex from 'katex';
+import { normalizeMathFormula } from './mathNormalizer';
 
 /**
  * Chuyển đổi công thức LaTeX ($...$, $$...$$, \(...\), \[...\]) thành MathML chuẩn.
@@ -11,7 +12,7 @@ export function formatMathForWord(text: string): string {
 
   // 1. Block math: $$ ... $$ hoặc \[ ... \]
   let res = text.replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g, (_, g1, g2) => {
-    const formula = (g1 || g2 || '').trim();
+    const formula = normalizeMathFormula((g1 || g2 || '').trim());
     try {
       const mathml = katex.renderToString(formula, { displayMode: true, output: 'mathml', throwOnError: false });
       return `<div style="text-align: center; margin: 4pt 0;">${mathml}</div>`;
@@ -22,7 +23,7 @@ export function formatMathForWord(text: string): string {
 
   // 2. Inline math: $ ... $ hoặc \( ... \)
   res = res.replace(/\$([^\$\n]+?)\$|\\\(([\s\S]+?)\\\)/g, (_, g1, g2) => {
-    const formula = (g1 || g2 || '').trim();
+    const formula = normalizeMathFormula((g1 || g2 || '').trim());
     try {
       return katex.renderToString(formula, { displayMode: false, output: 'mathml', throwOnError: false });
     } catch {
@@ -576,214 +577,6 @@ export function exportMatrixSpecToWord(exam: ExamCV7991) {
 </html>
   `;
   downloadBlob(htmlContent, `${exam.examTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_MaTran_DacTa_7991.doc`, 'application/msword');
-}
-
-/**
- * Xuất trọn gói 4 mã đề thi kèm Bảng ma trận đáp án soi đề tổng hợp ra file Word (.doc)
- */
-export function exportMultiCodeExamToWord(pkg: {
-  exams: ExamCV7991[];
-  masterAnswerKey: {
-    codes: string[];
-    part1: { questionNumber: number; answers: Record<string, string> }[];
-    part2: { questionNumber: number; subStatement: string; answers: Record<string, 'Đ' | 'S'> }[];
-    part3: { questionNumber: number; answers: Record<string, string> }[];
-  };
-}) {
-  const base = pkg.exams[0];
-  const codes = pkg.masterAnswerKey.codes;
-
-  const htmlContent = `
-<!DOCTYPE html>
-<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-<meta charset="utf-8">
-<title>TRỌN GÓI 4 MÃ ĐỀ & ĐÁP ÁN - ${base.examTitle}</title>
-<style>
-  @page Section1 {
-    size: 595.3pt 841.9pt; /* A4 */
-    margin: 45pt 45pt 45pt 50pt;
-    mso-header-margin: 36pt;
-    mso-footer-margin: 36pt;
-  }
-  div.Section1 { page: Section1; }
-  body {
-    font-family: 'Times New Roman', Times, serif;
-    font-size: 12.5pt;
-    line-height: 1.3;
-    color: #000;
-  }
-  h1 { font-size: 15pt; font-weight: bold; text-align: center; text-transform: uppercase; margin: 10pt 0 4pt 0; }
-  h2 { font-size: 13pt; font-weight: bold; margin: 10pt 0 4pt 0; text-transform: uppercase; color: #1e3a8a; }
-  table { border-collapse: collapse; width: 100%; margin: 6pt 0; }
-  th, td { border: 1pt solid #000; padding: 4pt 5pt; font-size: 11.5pt; vertical-align: middle; }
-  th { background-color: #f1f5f9; font-weight: bold; text-align: center; }
-  .header-table { width: 100%; border: none; margin-bottom: 8pt; }
-  .header-table td { border: none; padding: 0; }
-  .option-table { width: 100%; border: none; margin: 2pt 0; }
-  .option-table td { border: none; padding: 1pt 3pt; }
-  .page-break { page-break-before: always; }
-</style>
-</head>
-<body>
-<div class="Section1">
-  <!-- BẢNG MA TRẬN ĐÁP ÁN TỔNG HỢP (SOI ĐỀ) -->
-  <h1>BẢNG ĐÁP ÁN SOI ĐỀ TỔNG HỢP (CÁC MÃ ĐỀ: ${codes.join(', ')})</h1>
-  <p style="text-align: center; margin: 2pt 0 10pt 0;">
-    Môn: <strong>${base.subject}</strong> | Khối: <strong>${base.grade}</strong> | ${base.term} - Năm học ${base.academicYear}
-  </p>
-
-  <h2>PHẦN I: ĐÁP ÁN TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN (0,25đ/câu)</h2>
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 15%;">Câu hỏi</th>
-        ${codes.map(c => `<th style="width: ${85 / codes.length}%;">Mã ${c}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>
-      ${pkg.masterAnswerKey.part1.map(row => `
-        <tr>
-          <td style="text-align: center; font-weight: bold;">Câu ${row.questionNumber}</td>
-          ${codes.map(c => `<td style="text-align: center; font-weight: bold; color: #1e3a8a;">${row.answers[c] || '-'}</td>`).join('')}
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-
-  <h2>PHẦN II: ĐÁP ÁN ĐÚNG - SAI (TỐI ĐA 1,0đ/câu)</h2>
-  <p style="font-size: 10pt; font-style: italic;">(Barem chuẩn: Đúng 1 ý: 0,1đ | Đúng 2 ý: 0,25đ | Đúng 3 ý: 0,5đ | Đúng 4 ý: 1,0đ)</p>
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 12%;">Câu</th>
-        <th style="width: 10%;">Ý</th>
-        ${codes.map(c => `<th style="width: ${78 / codes.length}%;">Mã ${c}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>
-      ${pkg.masterAnswerKey.part2.map(row => `
-        <tr>
-          <td style="text-align: center; font-weight: bold;">Câu ${row.questionNumber}</td>
-          <td style="text-align: center; font-weight: bold;">${row.subStatement})</td>
-          ${codes.map(c => `
-            <td style="text-align: center; font-weight: bold; color: ${row.answers[c] === 'Đ' ? '#15803d' : '#b91c1c'};">
-              ${row.answers[c] || '-'}
-            </td>
-          `).join('')}
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-
-  <h2>PHẦN III: ĐÁP ÁN TRẢ LỜI NGẮN (0,5đ/câu)</h2>
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 15%;">Câu hỏi</th>
-        ${codes.map(c => `<th style="width: ${85 / codes.length}%;">Mã ${c}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>
-      ${pkg.masterAnswerKey.part3.map(row => `
-        <tr>
-          <td style="text-align: center; font-weight: bold;">Câu ${row.questionNumber}</td>
-          ${codes.map(c => `<td style="text-align: center; font-weight: bold; color: #1e3a8a;">${formatMathForWord(row.answers[c] || '-')}</td>`).join('')}
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-
-  <!-- CÁC ĐỀ THI TỪNG MÃ RIÊNG BIỆT -->
-  ${pkg.exams.map((ex) => `
-    <div class="page-break"></div>
-    <table class="header-table">
-      <tr>
-        <td style="width: 45%; text-align: center;">
-          <p style="margin: 0; font-weight: bold;">SỞ GIÁO DỤC VÀ ĐÀO TẠO</p>
-          <p style="margin: 0; font-weight: bold;">TRƯỜNG THPT ........................</p>
-          <p style="margin: 0; font-size: 10.5pt;">(Đề thi có ${ex.part1Questions.length + ex.part2Questions.length + ex.part3Questions.length + ex.part4Questions.length} câu)</p>
-        </td>
-        <td style="width: 55%; text-align: center;">
-          <p style="margin: 0; font-weight: bold;">${ex.examTitle}</p>
-          <p style="margin: 0;">Môn: <strong>${ex.subject} - ${ex.grade}</strong></p>
-          <p style="margin: 0; font-style: italic;">Thời gian: ${ex.durationMinutes} phút</p>
-          <p style="margin: 2pt 0 0 0; font-weight: bold; font-size: 13pt; color: #b91c1c;">MÃ ĐỀ THI: ${ex.code}</p>
-        </td>
-      </tr>
-    </table>
-
-    <p style="border: 1pt solid #000; padding: 4pt; font-style: italic; margin-bottom: 8pt;">
-      Họ và tên thí sinh: ............................................................................ Lớp: ................. SBD: ....................
-    </p>
-
-    <h2>PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn (3,0 điểm)</h2>
-    <p style="font-style: italic; font-size: 10.5pt;">Thí sinh trả lời từ câu 1 đến câu ${ex.part1Questions.length}. Mỗi câu hỏi thí sinh chỉ chọn một phương án.</p>
-    ${ex.part1Questions.map(q => `
-      <div style="margin: 5pt 0;">
-        <p><strong>Câu ${q.number}.</strong> ${formatMathForWord(q.content)}</p>
-        <table class="option-table">
-          <tr>
-            <td style="width: 50%;"><strong>A.</strong> ${formatMathForWord(q.options.A)}</td>
-            <td style="width: 50%;"><strong>B.</strong> ${formatMathForWord(q.options.B)}</td>
-          </tr>
-          <tr>
-            <td style="width: 50%;"><strong>C.</strong> ${formatMathForWord(q.options.C)}</td>
-            <td style="width: 50%;"><strong>D.</strong> ${formatMathForWord(q.options.D)}</td>
-          </tr>
-        </table>
-      </div>
-    `).join('')}
-
-    <h2>PHẦN II. Câu trắc nghiệm đúng sai (2,0 điểm)</h2>
-    <p style="font-style: italic; font-size: 10.5pt;">Thí sinh trả lời từ câu 1 đến câu ${ex.part2Questions.length}. Trong mỗi ý a), b), c), d) ở mỗi câu, thí sinh chọn Đúng hoặc Sai.</p>
-    ${ex.part2Questions.map(q => `
-      <div style="margin: 6pt 0; border: 1pt solid #cbd5e1; padding: 5pt; background: #fafafa;">
-        <p><strong>Câu ${q.number}.</strong> ${formatMathForWord(q.leadIn)}</p>
-        <table style="width: 100%; margin: 3pt 0;">
-          <tr>
-            <th style="width: 8%;">Ý</th>
-            <th style="width: 76%;">Nội dung mệnh đề</th>
-            <th style="width: 8%;">Đúng</th>
-            <th style="width: 8%;">Sai</th>
-          </tr>
-          ${q.statements.map(s => `
-            <tr>
-              <td style="text-align: center; font-weight: bold;">${s.subId})</td>
-              <td>${formatMathForWord(s.content)}</td>
-              <td style="text-align: center;">[  ]</td>
-              <td style="text-align: center;">[  ]</td>
-            </tr>
-          `).join('')}
-        </table>
-      </div>
-    `).join('')}
-
-    <h2>PHẦN III. Câu trắc nghiệm trả lời ngắn (2,0 điểm)</h2>
-    <p style="font-style: italic; font-size: 10.5pt;">Thí sinh trả lời từ câu 1 đến câu ${ex.part3Questions.length}. Viết câu trả lời hoặc số vào ô trống.</p>
-    ${ex.part3Questions.map(q => `
-      <div style="margin: 6pt 0;">
-        <p><strong>Câu ${q.number}.</strong> ${formatMathForWord(q.content)}</p>
-        <p style="margin-left: 20pt;"><em>Đáp số của thí sinh:</em> [.........................................................................]</p>
-      </div>
-    `).join('')}
-
-    <h2>PHẦN IV. Tự luận (3,0 điểm)</h2>
-    ${ex.part4Questions.map(q => `
-      <div style="margin: 8pt 0;">
-        <p><strong>Câu ${q.number} (${q.points} điểm).</strong> ${formatMathForWord(q.content)}</p>
-        <div style="border: 1pt dashed #cbd5e1; height: 70pt; margin: 4pt 0;"></div>
-      </div>
-    `).join('')}
-    
-    <p style="text-align: center; margin-top: 15pt; font-weight: bold;">--- HẾT MÃ ĐỀ ${ex.code} ---</p>
-  `).join('')}
-</div>
-</body>
-</html>
-  `;
-
-  downloadBlob(htmlContent, `TronGoi_4_MaDe_Va_DapAn_${base.subject}_${base.grade}.doc`, 'application/msword');
 }
 
 function downloadBlob(content: string, filename: string, mimeType: string) {

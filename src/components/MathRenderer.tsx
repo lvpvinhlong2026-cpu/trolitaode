@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { normalizeMathFormula } from '../utils/mathNormalizer';
 
 interface MathRendererProps {
   content: string | number | undefined | null;
@@ -59,6 +60,9 @@ export function renderMathHtml(rawText: string | number | undefined | null): str
       formula = token.slice(2, -2).trim();
       isDisplay = false;
     }
+
+    // Chuẩn hóa các biến thể dấu khác sang \neq để KaTeX hiển thị đúng ≠
+    formula = normalizeMathFormula(formula);
 
     try {
       const renderedMath = katex.renderToString(formula, {

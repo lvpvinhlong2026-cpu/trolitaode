@@ -102,13 +102,6 @@ export default function UserGuide() {
                 <li><strong>Phần IV (Tùy chọn):</strong> Tự luận vận dụng thực tiễn kèm rubric barem điểm thành phần.</li>
               </ul>
             </div>
-
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-              <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1">🔀 Trộn 4 mã đề & Thi thử trực tuyến:</h4>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Hệ thống tự động đảo câu hỏi và đáp án ra 4 mã đề (101, 102, 103, 104) kèm phiếu soi đáp án tiện lợi. Học sinh có thể làm bài trực tuyến và hệ thống tự động chấm điểm ngay lập tức.
-              </p>
-            </div>
           </div>
         </div>
       )

@@ -39,6 +39,36 @@ mjx-container {
   vertical-align: middle;
 }
 
+/* KaTeX 0.16 (rehype-katex) vs 0.18 CSS compatibility:
+   0.16 emits .vbox/.inner/.fix for \neq, \notin, \rlap, \llap, \clap,
+   while 0.18's katex.min.css renamed them to .katex-vbox/.katex-inner/.katex-fix */
+.katex .vbox {
+  align-items: baseline;
+  display: inline-flex;
+  flex-direction: column;
+}
+.katex .clap > .inner,
+.katex .llap > .inner,
+.katex .rlap > .inner {
+  position: absolute;
+}
+.katex .clap > .fix,
+.katex .llap > .fix,
+.katex .rlap > .fix {
+  display: inline-block;
+}
+.katex .llap > .inner {
+  right: 0;
+}
+.katex .clap > .inner,
+.katex .rlap > .inner {
+  left: 0;
+}
+.katex .clap > .inner > span {
+  margin-left: -50%;
+  margin-right: 50%;
+}
+
 /* Pulsing background for premium look */
 .bg-mesh {
   background-color: #f8fafc;

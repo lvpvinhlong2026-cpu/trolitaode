@@ -27,6 +27,7 @@ import { renderGraphToCanvas, GraphConfig } from './functionGraphEngine';
 import { renderBBTToCanvas, analyzeFromCoeffs } from './bbtEngine';
 import { renderGeometry3DToCanvas, Geometry3DConfig } from './geometry3dEngine';
 import { cropCanvasToContent } from './dpiUtils';
+import { normalizeMathFormula } from './mathNormalizer';
 
 // =========================================================================
 // 1. BẢNG KÝ HIỆU TOÁN HỌC UNICODE CHUẨN OFFICE MATH
@@ -49,7 +50,7 @@ const LATEX_SYMBOLS_MAP: [RegExp, string][] = [
   [/\\div/g, '÷'],
   [/\\le(?:slant)?\b/g, '≤'],
   [/\\ge(?:slant)?\b/g, '≥'],
-  [/\\neq\b/g, '≠'],
+  [/\s*\\neq?\b\s*/g, ' ≠ '],
   [/\\approx\b/g, '≈'],
   [/\\equiv\b/g, '≡'],
   [/\\in\b/g, '∈'],
@@ -93,7 +94,7 @@ const LATEX_SYMBOLS_MAP: [RegExp, string][] = [
  * Chuẩn hóa ký hiệu LaTeX thành chuỗi ký tự toán học Unicode
  */
 export function cleanMathSymbols(latex: string): string {
-  let res = latex.trim();
+  let res = normalizeMathFormula(latex.trim());
   for (const [pattern, replacement] of LATEX_SYMBOLS_MAP) {
     res = res.replace(pattern, replacement);
   }

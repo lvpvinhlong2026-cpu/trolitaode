@@ -7,12 +7,27 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Check, 
   Sparkles, 
-  Settings
+  Settings,
+  AlertTriangle,
+  Undo2,
+  Redo2,
+  BookmarkPlus,
+  FolderOpen,
+  Trash2,
+  X
 } from 'lucide-react';
 import { AppData } from './types';
 import { getStoredData, saveStoredData } from './utils/dataStore';
 import { ExamCV7991 } from './types/pedagogy';
 import { SAMPLES } from './data/sampleCurriculum';
+import {
+  loadExamDraft,
+  saveExamDraft,
+  loadExamLibrary,
+  saveExamToLibrary,
+  deleteExamFromLibrary,
+  SavedExamEntry,
+} from './utils/examLibrary';
 
 // Modules theo chuyên môn
 import { WordRibbonBar } from './components/WordRibbonBar';
@@ -50,9 +65,82 @@ export default function App() {
   const [isRibbonCollapsed, setIsRibbonCollapsed] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Quản lý đề thi chuẩn CV 7991 (4 phần, trộn đề, thi thử)
-  const [examData, setExamData] = useState<ExamCV7991>(SAMPLES[0].exam);
+  // Quản lý đề thi chuẩn CV 7991 (auto-save vào localStorage + Undo/Redo + Thư viện đề)
+  const [examData, setExamDataState] = useState<ExamCV7991>(() => loadExamDraft() || SAMPLES[0].exam);
+  const [undoStack, setUndoStack] = useState<ExamCV7991[]>([]);
+  const [redoStack, setRedoStack] = useState<ExamCV7991[]>([]);
+  const [examLibrary, setExamLibrary] = useState<SavedExamEntry[]>(() => loadExamLibrary());
+  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
+  const [fallbackWarning, setFallbackWarning] = useState<{ activeModel: string; errorReason: string } | null>(null);
   const [isBookUploadModalOpen, setIsBookUploadModalOpen] = useState(false);
+
+  const setExamData = useCallback((updater: ExamCV7991 | ((prev: ExamCV7991) => ExamCV7991)) => {
+    setExamDataState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (next !== prev) {
+        setUndoStack(u => [...u.slice(-29), prev]);
+        setRedoStack([]);
+        saveExamDraft(next);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    setUndoStack(u => {
+      if (u.length === 0) return u;
+      const previous = u[u.length - 1];
+      setExamDataState(current => {
+        setRedoStack(r => [...r.slice(-29), current]);
+        saveExamDraft(previous);
+        return previous;
+      });
+      return u.slice(0, -1);
+    });
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    setRedoStack(r => {
+      if (r.length === 0) return r;
+      const next = r[r.length - 1];
+      setExamDataState(current => {
+        setUndoStack(u => [...u.slice(-29), current]);
+        saveExamDraft(next);
+        return next;
+      });
+      return r.slice(0, -1);
+    });
+  }, []);
+
+  useEffect(() => {
+    const onFallback = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setFallbackWarning({
+          activeModel: detail.activeModel || 'Gemini-Auto-Fallback',
+          errorReason: detail.errorReason || 'Kết nối AI bị gián đoạn.',
+        });
+      }
+    };
+    window.addEventListener('ai_fallback_triggered', onFallback);
+    return () => window.removeEventListener('ai_fallback_triggered', onFallback);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
 
   // API Key & Model Settings states (Gemini 3 Pro -> Gemini 3 Flash -> Gemini 2.5 Flash Auto Fallback)
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('gemini_api_key') || '');
@@ -190,6 +278,7 @@ export default function App() {
 
     if (activeTab === 'exam_full') {
       if (examData.part1Questions.length > 0) {
+        if (!window.confirm('Bạn có chắc muốn xóa câu hỏi cuối cùng của Phần I? (Có thể hoàn tác bằng Ctrl+Z)')) return;
         setExamData(prev => ({
           ...prev,
           part1Questions: prev.part1Questions.slice(0, -1)
@@ -200,6 +289,7 @@ export default function App() {
       }
     } else if (activeTab === 'matrix_full') {
       if (examData.matrixRows.length > 1) {
+        if (!window.confirm('Bạn có chắc muốn xóa dòng cuối cùng của Ma trận?')) return;
         setExamData(prev => ({
           ...prev,
           matrixRows: prev.matrixRows.slice(0, -1)
@@ -211,18 +301,19 @@ export default function App() {
     } else {
       showToast('Đã kích hoạt chức năng Xóa nội dung trên module');
     }
-  }, [activeTab, examData]);
+  }, [activeTab, examData, setExamData]);
 
   const handleReset = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('app_action', { detail: { action: 'reset', tab: activeTab } }));
-
     if (activeTab === 'exam_full' || activeTab === 'matrix_full') {
+      if (!window.confirm('Khôi phục về đề thi và ma trận mẫu CV 7991 ban đầu? Thay đổi hiện tại vẫn có thể hoàn tác bằng nút Undo.')) return;
+      window.dispatchEvent(new CustomEvent('app_action', { detail: { action: 'reset', tab: activeTab } }));
       setExamData(SAMPLES[0].exam);
       showToast('Đã khôi phục đề thi và ma trận chuẩn CV 7991 ban đầu');
     } else {
+      window.dispatchEvent(new CustomEvent('app_action', { detail: { action: 'reset', tab: activeTab } }));
       showToast('Đã làm lại và khôi phục trạng thái chuẩn');
     }
-  }, [activeTab]);
+  }, [activeTab, setExamData]);
 
   // Tab label for Context Menu
   const getTabLabel = (tab: ActiveTabType): string => {
@@ -292,9 +383,38 @@ export default function App() {
       {/* 4. VÙNG LÀM VIỆC CHÍNH (DOCUMENT WORKSPACE - NỀN XÁM NHẠT #E8E8E8 + TRANG GIẤY TRẮNG ĐỔ BÓNG A4) */}
       <main className="flex-1 overflow-y-auto p-3 sm:p-6 transition-all bg-[#E8E8E8] dark:bg-slate-950">
         
-        {/* Nạp nhanh SGK chỉ hiển thị gọn khi ở tab Đề thi hoặc Ma trận */}
+        {/* CẢNH BÁO KHI HỆ THỐNG FALLBACK AI ĐƯỢC KÍCH HOẠT */}
+        {fallbackWarning && (
+          <div className="mb-3 max-w-[1500px] mx-auto bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 px-4 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs shadow-xs">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                <strong>Đang dùng dữ liệu mẫu dự phòng ({fallbackWarning.activeModel}):</strong> Không gọi được Gemini API ({fallbackWarning.errorReason}). Kết quả hiển thị là nội dung mẫu, không phải nội dung AI sinh từ tài liệu của bạn.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSettingsModal(true)}
+                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold transition"
+              >
+                Kiểm tra API Key
+              </button>
+              <button
+                type="button"
+                onClick={() => setFallbackWarning(null)}
+                className="p-1 text-amber-700 dark:text-amber-300 hover:bg-amber-200/50 rounded-lg"
+                title="Đóng cảnh báo"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Nạp nhanh SGK + Undo/Redo + Thư viện đề chỉ hiển thị gọn khi ở tab Đề thi hoặc Ma trận */}
         {(activeTab === 'exam_full' || activeTab === 'matrix_full') && (
-          <div className="mb-3 max-w-[1500px] mx-auto">
+          <div className="mb-3 max-w-[1500px] mx-auto space-y-2">
             <QuickBookUploadBar
               currentLessonName={examData.examTitle}
               currentSubject={examData.subject}
@@ -302,6 +422,51 @@ export default function App() {
               onSelectLesson={handleSelectLessonFromBook}
               onOpenFullModal={() => setIsBookUploadModalOpen(true)}
             />
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl text-xs shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                  Tự động lưu nháp
+                </span>
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={undoStack.length === 0}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 disabled:opacity-40 font-semibold transition"
+                  title="Hoàn tác (Ctrl+Z)"
+                >
+                  <Undo2 size={13} /> Hoàn tác ({undoStack.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={redoStack.length === 0}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 disabled:opacity-40 font-semibold transition"
+                  title="Làm lại (Ctrl+Y)"
+                >
+                  <Redo2 size={13} /> Làm lại ({redoStack.length})
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = saveExamToLibrary(examData);
+                    setExamLibrary(updated);
+                    showToast('Đã lưu đề thi vào Thư viện cá nhân!');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold transition shadow-2xs"
+                >
+                  <BookmarkPlus size={13} /> Lưu vào Thư viện
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLibraryModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 font-bold transition"
+                >
+                  <FolderOpen size={13} /> Thư viện đề ({examLibrary.length})
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -338,12 +503,28 @@ export default function App() {
 
           {/* TAB 3: SINH ĐỀ AI THEO MA TRẬN (KÈM BBT VÀ ĐỒ THỊ) */}
           <div className={activeTab === 'cv7991' ? 'block animate-fade-in' : 'hidden'}>
-            <CV7991ExamGenerator apiKey={apiKey} model={preferredModel} />
+            <CV7991ExamGenerator
+              apiKey={apiKey}
+              model={preferredModel}
+              onApplyExam={(newExam) => {
+                setExamData(newExam);
+                showToast('Đã đẩy đề từ Sinh đề AI sang Đề chuẩn CV 7991!');
+              }}
+              onNavigateToExam={() => setActiveTab('exam_full')}
+            />
           </div>
 
           {/* TAB 4: TẠO ĐỀ TƯƠNG TỰ */}
           <div className={activeTab === 'similar' ? 'block animate-fade-in' : 'hidden'}>
-            <SimilarExamGenerator apiKey={apiKey} model={preferredModel} />
+            <SimilarExamGenerator
+              apiKey={apiKey}
+              model={preferredModel}
+              onApplyExam={(newExam) => {
+                setExamData(newExam);
+                showToast('Đã đẩy đề tương tự sang Đề chuẩn CV 7991!');
+              }}
+              onNavigateToExam={() => setActiveTab('exam_full')}
+            />
           </div>
 
           {/* TAB 5: PHẢN BIỆN ĐỀ THI & MA TRẬN ĐẶC TẢ */}
@@ -385,6 +566,75 @@ export default function App() {
         onClose={() => setIsBookUploadModalOpen(false)}
         onSelectLesson={handleSelectLessonFromBook}
       />
+
+      {/* MODAL THƯ VIỆN ĐỀ THI ĐÃ LƯU */}
+      {isLibraryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full p-6 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <FolderOpen size={16} className="text-indigo-600" />
+                Thư viện Đề thi đã lưu ({examLibrary.length})
+              </h3>
+              <button
+                onClick={() => setIsLibraryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto space-y-2 pr-1 flex-1">
+              {examLibrary.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">
+                  Chưa có đề thi nào được lưu. Bấm "Lưu vào Thư viện" để lưu trữ đề hiện tại.
+                </p>
+              ) : (
+                examLibrary.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                        {entry.title}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {entry.subject} • Lớp {entry.grade} • Lưu lúc {new Date(entry.savedAt).toLocaleString('vi-VN')}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExamData(entry.exam);
+                          setIsLibraryModalOpen(false);
+                          setActiveTab('exam_full');
+                          showToast(`Đã nạp đề: ${entry.title}`);
+                        }}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition"
+                      >
+                        Mở đề
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`Xóa đề "${entry.title}" khỏi thư viện?`)) return;
+                          setExamLibrary(deleteExamFromLibrary(entry.id));
+                          showToast('Đã xóa đề khỏi thư viện');
+                        }}
+                        className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-lg transition"
+                        title="Xóa đề"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL CẤU HÌNH API KEY (GEMINI 3 PRO / 3 FLASH / 2.5 FLASH AUTO-FALLBACK) */}
       {showSettingsModal && (

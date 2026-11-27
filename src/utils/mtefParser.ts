@@ -3,6 +3,8 @@
  * Chuyển đổi trực tiếp các công thức MathType thành mã chuẩn LaTeX ($...$)
  */
 
+import { normalizeMathFormula } from './mathNormalizer';
+
 export function parseMtefToLatex(input: ArrayBuffer | Uint8Array): string {
   if (!input) return '';
   const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -190,7 +192,7 @@ export function parseMtefToLatex(input: ArrayBuffer | Uint8Array): string {
   }
 
   function cleanMathText(str: string): string {
-    return (str || '')
+    return normalizeMathFormula(str || '')
       .replace(/\s+/g, ' ')
       .replace(/_{}/g, '')
       .replace(/\^{}/g, '')

@@ -6,13 +6,19 @@ import EditorToolbar from './EditorToolbar';
 import MarkdownEditor from './MarkdownEditor';
 import { buildExamDocxBlob } from '../utils/docxExamBuilder';
 import { IntegratedDiagramModal, DiagramToolTab } from './IntegratedDiagramModal';
+import { notifyFallbackIfNeeded } from '../utils/gemini';
+import { parseExamMarkdownToCV7991 } from '../utils/examFormatConverter';
+import { ExamCV7991 } from '../types/pedagogy';
+import { ArrowRight } from 'lucide-react';
 
 interface Props {
   apiKey: string;
   model: string;
+  onApplyExam?: (exam: ExamCV7991) => void;
+  onNavigateToExam?: () => void;
 }
 
-export default function SimilarExamGenerator({ apiKey, model }: Props) {
+export default function SimilarExamGenerator({ apiKey, model, onApplyExam, onNavigateToExam }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -214,53 +220,36 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
         }
 
         const data = await res.json();
+        notifyFallbackIfNeeded(data);
         extractedText = data.text;
         if (data.isFinished === false) setIsAiFinished(false);
         else setIsAiFinished(true);
 
       } else {
-        setStatus('Đang đọc dữ liệu file...');
-        
-        const base64Files = [];
+        setStatus('Đang chuẩn bị dữ liệu file (multipart)...');
+
+        const formData = new FormData();
         for (let i = 0; i < files.length; i++) {
           const f = files[i];
           if (f.name.toLowerCase().endsWith('.docx')) {
             throw new Error('Chế độ xử lý hàng loạt hiện tại chỉ hỗ trợ Ảnh và PDF, không hỗ trợ trộn file Word chung với Ảnh.');
           }
-          
-          const base64Data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(f);
-            reader.onload = () => {
-              const result = reader.result?.toString().split(',')[1];
-              if (result) resolve(result);
-              else reject(new Error('Không thể đọc dữ liệu file.'));
-            };
-            reader.onerror = () => reject(new Error('Lỗi khi đọc file trên trình duyệt.'));
-          });
-          
-          base64Files.push({
-            base64: base64Data,
-            mimeType: f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
-          });
+          formData.append('files', f);
         }
+        formData.append('parsingMode', 'similar_exam');
+        formData.append('model', model || 'auto');
+        if (apiKey) formData.append('apiKey', apiKey);
+        formData.append('includeShortSolution', String(includeShortSolution));
+        formData.append('examCount', String(examCount));
+        formData.append('keepOriginalDiagrams', String(keepOriginalDiagrams));
+        formData.append('contextSuggestion', finalContextSuggestion);
 
         setProgress(30);
         setStatus('Đang phân tích cấu trúc đề và sinh đề mới (AI đang làm việc - có thể mất vài phút)...');
 
         const res = await fetch('/api/convert-pdf', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            files: base64Files,
-            parsingMode: 'similar_exam',
-            model: model || 'gemini-1.5-pro',
-            apiKey: apiKey,
-            includeShortSolution,
-            examCount,
-            keepOriginalDiagrams,
-            contextSuggestion: finalContextSuggestion
-          })
+          body: formData
         });
 
         if (!res.ok) {
@@ -275,6 +264,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
         }
 
         const data = await res.json();
+        notifyFallbackIfNeeded(data);
         extractedText = data.text;
         if (data.isFinished === false) setIsAiFinished(false);
         else setIsAiFinished(true);
@@ -310,30 +300,6 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
     const finalContextSuggestion = `${contextSuggestion}\n${noParameterM ? '- Yêu cầu các câu hỏi KHÔNG chứa tham số m.\n' : ''}${useRealWorldData ? '- Ưu tiên sử dụng nhiều dữ kiện thực tế, bối cảnh thực tiễn vào các câu hỏi.\n' : ''}`;
 
     try {
-      const base64Files = [];
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        if (f.name.toLowerCase().endsWith('.docx')) {
-           continue; 
-        }
-        
-        const base64Data = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(f);
-          reader.onload = () => {
-            const result = reader.result?.toString().split(',')[1];
-            if (result) resolve(result);
-            else reject(new Error('Không thể đọc dữ liệu file.'));
-          };
-          reader.onerror = () => reject(new Error('Lỗi khi đọc file trên trình duyệt.'));
-        });
-        
-        base64Files.push({
-          base64: base64Data,
-          mimeType: f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
-        });
-      }
-
       if (files.length === 1 && files[0].name.toLowerCase().endsWith('.docx')) {
          const file = files[0];
          const zip = await JSZip.loadAsync(file);
@@ -367,21 +333,36 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
          const res = await fetch('/api/convert-word', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ textContent: parsedText, parsingMode: 'similar_exam', model: model || 'gemini-1.5-pro', apiKey, includeShortSolution, examCount, contextSuggestion: finalContextSuggestion, continueFromText: resultText })
+           body: JSON.stringify({ textContent: parsedText, parsingMode: 'similar_exam', model: model || 'auto', apiKey, includeShortSolution, examCount, contextSuggestion: finalContextSuggestion, continueFromText: resultText })
          });
          if (!res.ok) throw new Error('Lỗi từ máy chủ API.');
          const data = await res.json();
+         notifyFallbackIfNeeded(data);
          setResultText(prev => prev + '\n' + data.text);
          if (data.isFinished === false) setIsAiFinished(false);
          else setIsAiFinished(true);
       } else {
+         const formData = new FormData();
+         for (const f of files) {
+           if (!f.name.toLowerCase().endsWith('.docx')) {
+             formData.append('files', f);
+           }
+         }
+         formData.append('parsingMode', 'similar_exam');
+         formData.append('model', model || 'auto');
+         if (apiKey) formData.append('apiKey', apiKey);
+         formData.append('includeShortSolution', String(includeShortSolution));
+         formData.append('examCount', String(examCount));
+         formData.append('contextSuggestion', finalContextSuggestion);
+         formData.append('continueFromText', resultText);
+
          const res = await fetch('/api/convert-pdf', {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ files: base64Files, parsingMode: 'similar_exam', model: model || 'gemini-1.5-pro', apiKey, includeShortSolution, examCount, contextSuggestion: finalContextSuggestion, continueFromText: resultText })
+           body: formData
          });
          if (!res.ok) throw new Error('Lỗi từ máy chủ API.');
          const data = await res.json();
+         notifyFallbackIfNeeded(data);
          setResultText(prev => prev + '\n' + data.text);
          if (data.isFinished === false) setIsAiFinished(false);
          else setIsAiFinished(true);
@@ -663,7 +644,7 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
                 Bạn có thể chỉnh sửa tự do trong ô trên. Khi thấy ưng ý, hãy nhấn lưu thành file Word. Nếu AI bị ngắt giữa chừng, hãy nhấn Tiếp tục sinh.
               </p>
             )}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleContinueConvert}
                 disabled={isProcessing || !resultText.trim()}
@@ -672,6 +653,22 @@ export default function SimilarExamGenerator({ apiKey, model }: Props) {
                 {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
                 {isAiFinished === false ? 'Tiếp Tục Sinh Phần Thiếu' : 'Tiếp tục sinh'}
               </button>
+              {onApplyExam && (
+                <button
+                  onClick={() => {
+                    const parsed = parseExamMarkdownToCV7991(resultText, {
+                      examTitle: files.length > 0 ? `Đề tương tự (${files[0].name})` : 'Đề thi tương tự CV 7991',
+                    });
+                    onApplyExam(parsed);
+                    onNavigateToExam?.();
+                  }}
+                  disabled={!resultText.trim()}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-all shadow-md disabled:opacity-50"
+                >
+                  <ArrowRight size={18} />
+                  Đẩy sang Đề chuẩn CV 7991
+                </button>
+              )}
               <button
                 onClick={handleDownloadWord}
                 className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-green-500/20 hover:-translate-y-0.5"

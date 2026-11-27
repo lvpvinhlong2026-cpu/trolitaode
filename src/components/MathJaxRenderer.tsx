@@ -8,6 +8,26 @@ import 'katex/dist/katex.min.css';
 import DiagramPlaceholderWidget from './DiagramPlaceholderWidget';
 import DiagramRenderedWidget from './DiagramRenderedWidget';
 import { DiagramType, DiagramSuggestion } from '../utils/mathDiagramSuggester';
+import { normalizeMarkdownMathDelimitersAndOperators, normalizeMathFormula } from '../utils/mathNormalizer';
+
+/**
+ * Plugin Remark chuẩn hóa trực tiếp các node AST `math` và `inlineMath`
+ * trước khi `rehype-katex` render (tránh lệch cặp dấu $ trong văn bản dài).
+ */
+function remarkNormalizeMath() {
+  return (tree: any) => {
+    const visit = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if ((node.type === 'math' || node.type === 'inlineMath') && typeof node.value === 'string') {
+        node.value = normalizeMathFormula(node.value);
+      }
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) visit(child);
+      }
+    };
+    visit(tree);
+  };
+}
 
 export interface MathJaxRendererProps {
   content: string;
@@ -25,12 +45,7 @@ export interface MathJaxRendererProps {
  * Tiền xử lý nội dung Markdown để nhận diện câu hỏi và các vị trí cần vẽ hình (BBT, Đồ thị, Hình 3D)
  */
 function preprocessMarkdownContent(raw: string): string {
-  let text = (raw || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/\\\[/g, '$$$$')
-    .replace(/\\\]/g, '$$$$')
-    .replace(/\\\(/g, '$')
-    .replace(/\\\)/g, '$');
+  let text = normalizeMarkdownMathDelimitersAndOperators(raw);
 
   const lines = text.split('\n');
   const resultLines: string[] = [];
@@ -164,7 +179,7 @@ export default function MathJaxRenderer({
   return (
     <ContainerTag className={containerClass}>
       <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkGfm]}
+        remarkPlugins={[remarkMath, remarkNormalizeMath, remarkGfm]}
         rehypePlugins={[rehypeRaw, rehypeKatex]}
         components={{
           p: ({ node, ...props }) => (inline ? <span {...props} /> : <p className="mb-2" {...props} />),

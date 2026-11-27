@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { ExamCV7991, Part2Question, Part1Question, Part3Question, Part4EssayQuestion } from '../types/pedagogy';
 import { exportExamToWord, exportMatrixSpecToWord } from '../utils/exportWord';
-import { MultiCodeExamModal } from './MultiCodeExamModal';
-import { StudentExamModal } from './StudentExamModal';
-import { ExportToOnlineExamModal } from './ExportToOnlineExamModal';
 import { MathRenderer } from './MathRenderer';
+import { validateExamAgainstMatrix } from '../utils/examValidator';
+import { callGeminiAI } from '../utils/gemini';
 import { 
   CheckSquare, 
   Download, 
@@ -15,15 +14,14 @@ import {
   CheckCircle2, 
   XCircle, 
   FileCheck,
-  Shuffle,
   Lock,
   Sliders,
   HelpCircle,
   Eye,
   EyeOff,
-  PlayCircle,
-  Globe,
-  QrCode
+  AlertTriangle,
+  ShieldCheck,
+  Loader2
 } from 'lucide-react';
 
 interface ExamCV7991ViewProps {
@@ -44,20 +42,12 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
 
   // Toggle answers
   const [showAnswerKeys, setShowAnswerKeys] = useState<boolean>(false);
-  const [isMultiCodeModalOpen, setIsMultiCodeModalOpen] = useState<boolean>(false);
-  const [isStudentExamModalOpen, setIsStudentExamModalOpen] = useState<boolean>(false);
-  const [isExportOnlineModalOpen, setIsExportOnlineModalOpen] = useState<boolean>(false);
-  const [onlineExamData, setOnlineExamData] = useState<{
-    examId: string;
-    title: string;
-    questionsCount: number;
-    duration: number;
-    examOnlineUrl: string;
-    tunnelUrl?: string;
-  } | null>(null);
-  const [isExportingOnline, setIsExportingOnline] = useState<boolean>(false);
+  const [isVerifyingAnswers, setIsVerifyingAnswers] = useState<boolean>(false);
+  const [verifyReport, setVerifyReport] = useState<string | null>(null);
   const [studentPart3Answers, setStudentPart3Answers] = useState<Record<string, string>>({});
   const [studentPart2Answers, setStudentPart2Answers] = useState<Record<string, Record<string, boolean | null>>>({});
+
+  const validationReport = validateExamAgainstMatrix(exam);
 
   // Question counts
   const countPart1 = exam.part1Questions.length;
@@ -65,25 +55,31 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
   const countPart3 = exam.part3Questions.length;
   const countPart4 = exam.part4Questions.length;
 
-  const handleExportToKiemTraOnline = async () => {
-    setIsExportingOnline(true);
+  const handleVerifyAnswersWithAI = async () => {
+    setIsVerifyingAnswers(true);
     try {
-      const res = await fetch('/api/export-to-kiem-tra-online', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exam, duration: 90 })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setOnlineExamData(data);
-        setIsExportOnlineModalOpen(true);
-      } else {
-        alert(data.error || 'Có lỗi khi xuất đề sang KIEM_TRA_ONLINE');
-      }
+      const p1Summary = exam.part1Questions
+        .map(q => `Câu ${q.number}: ${q.content}\nA. ${q.options.A} | B. ${q.options.B} | C. ${q.options.C} | D. ${q.options.D}\n(Key hiện tại: ${q.correctAnswer})`)
+        .join('\n\n');
+      const p2Summary = exam.part2Questions
+        .map(q => `Câu ${q.number} (Đ/S): ${q.leadIn}\n` + q.statements.map(s => `${s.subId}) ${s.content} [Key: ${s.isCorrect ? 'Đúng' : 'Sai'}]`).join('\n'))
+        .join('\n\n');
+      const p3Summary = exam.part3Questions
+        .map(q => `Câu ${q.number} (TLN): ${q.content} (Key hiện tại: ${q.correctAnswerShort})`)
+        .join('\n\n');
+
+      const prompt = `Bạn là Chuyên gia Phản biện & Kiểm định Đề thi Toán học chuẩn GDPT 2018.
+Hãy tự giải nháp và KIỂM TRA CHÉO toàn bộ đáp án (Key) và cú pháp công thức LaTeX của đề thi dưới đây.
+Nếu câu nào đúng, ghi ngắn gọn "✅ Đạt". Nếu câu nào có sai sót về đáp án, tính toán hoặc đề bài thiếu dữ kiện, hãy chỉ rõ "❌ Sai sót ở Câu X" và nêu đáp án đúng đề xuất.
+
+${p1Summary ? `=== PHẦN I ===\n${p1Summary}\n\n` : ''}${p2Summary ? `=== PHẦN II ===\n${p2Summary}\n\n` : ''}${p3Summary ? `=== PHẦN III ===\n${p3Summary}` : ''}`;
+
+      const report = await callGeminiAI(prompt);
+      setVerifyReport(report);
     } catch (err: any) {
-      alert('Không thể kết nối đến máy chủ: ' + err.message);
+      alert('Không thể rà soát bằng AI: ' + (err?.message || err));
     } finally {
-      setIsExportingOnline(false);
+      setIsVerifyingAnswers(false);
     }
   };
 
@@ -112,12 +108,6 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
     }));
   };
 
-  const handleShuffleCode = () => {
-    const codes = ['101', '102', '103', '104', '201', '202'];
-    const nextCode = codes[(codes.indexOf(exam.code) + 1) % codes.length];
-    onUpdateExam({ ...exam, code: nextCode });
-  };
-
   return (
     <div className="space-y-6">
       {/* HEADER CONTROL BAR */}
@@ -137,35 +127,15 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* NÚT LÀM THỬ & DUYỆT ĐỀ (GIÁO VIÊN) */}
+          {/* NÚT AI RÀ SOÁT ĐÁP ÁN & CÔNG THỨC */}
           <button
-            onClick={() => setIsStudentExamModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-300 shadow-sm transition active:scale-95"
-            title="Mở phòng thi thử nội bộ để giáo viên duyệt đề, kiểm tra đáp án và giải thử"
+            onClick={handleVerifyAnswersWithAI}
+            disabled={isVerifyingAnswers}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs border border-amber-300 shadow-sm transition active:scale-95 disabled:opacity-50"
+            title="AI tự giải nháp và đối chiếu lại đáp án, công thức của toàn bộ đề thi"
           >
-            <Eye className="w-4 h-4 text-indigo-600" />
-            <span>Làm Thử & Duyệt Đề (Giáo Viên)</span>
-          </button>
-
-          {/* NÚT GIAO THI ONLINE TOÀN LỚP (MÃ QR & LINK INTERNET) */}
-          <button
-            onClick={handleExportToKiemTraOnline}
-            disabled={isExportingOnline}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md transition active:scale-95 disabled:opacity-50"
-            title="1-Click xuất đề sang hệ thống KIEM_TRA_ONLINE, tạo mã QR và link làm bài trên điện thoại/máy tính cho học sinh"
-          >
-            <Globe className="w-4 h-4 text-emerald-300" />
-            <span>{isExportingOnline ? 'Đang tạo QR thi...' : 'Giao Thi Online Toàn Lớp (Mã QR)'}</span>
-          </button>
-
-          {/* NÚT TRỘN ĐỀ 4 MÃ ĐỀ & BẢNG ĐÁP ÁN */}
-          <button
-            onClick={() => setIsMultiCodeModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs shadow-md transition active:scale-95"
-            title="Tự động đảo câu hỏi và đáp án ra 4 mã đề (101, 102, 103, 104) kèm Bảng ma trận soi đề"
-          >
-            <Shuffle className="w-4 h-4 text-emerald-200" />
-            <span>Trộn Đề (4 Mã Đề)</span>
+            {isVerifyingAnswers ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4 text-amber-600" />}
+            <span>{isVerifyingAnswers ? 'Đang rà soát...' : 'AI Rà Soát Đáp Án'}</span>
           </button>
 
           <button
@@ -211,6 +181,21 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* CẢNH BÁO SAI LỆCH MA TRẬN HOẶC TỔNG ĐIỂM KHÁC 10.0 */}
+      {validationReport.warnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 rounded-2xl text-xs space-y-1 no-print">
+          <div className="font-bold flex items-center gap-2 text-amber-800">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Cảnh báo đối chiếu Ma trận & Thang điểm CV 7991 (Tổng điểm hiện tại: {validationReport.totalPoints.toFixed(2)}đ)</span>
+          </div>
+          <ul className="list-disc pl-6 space-y-0.5 text-amber-800">
+            {validationReport.warnings.map((w, idx) => (
+              <li key={idx}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* SCOPE 2 MAIN WORKSPACE: BÊN TRÁI THIẾT LẬP MA TRẬN & BÊN PHẢI LIVE DOCUMENT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -612,27 +597,36 @@ export const ExamCV7991View: React.FC<ExamCV7991ViewProps> = ({
 
       </div>
 
-      {/* MODAL TRỘN ĐỀ 4 MÃ ĐỀ & BẢNG ĐÁP ÁN */}
-      <MultiCodeExamModal
-        isOpen={isMultiCodeModalOpen}
-        onClose={() => setIsMultiCodeModalOpen(false)}
-        exam={exam}
-        onSelectExamCode={(selected) => onUpdateExam(selected)}
-      />
-
-      {/* MODAL PHÒNG THI THỬ TRỰC TUYẾN CHẤM ĐIỂM (LÀM THỬ & DUYỆT ĐỀ) */}
-      <StudentExamModal
-        isOpen={isStudentExamModalOpen}
-        onClose={() => setIsStudentExamModalOpen(false)}
-        exam={exam}
-      />
-
-      {/* MODAL GIAO THI ONLINE TOÀN LỚP (MÃ QR & LINK INTERNET) */}
-      <ExportToOnlineExamModal
-        isOpen={isExportOnlineModalOpen}
-        onClose={() => setIsExportOnlineModalOpen(false)}
-        examData={onlineExamData}
-      />
+      {/* MODAL BÁO CÁO RÀ SOÁT ĐÁP ÁN BẰNG AI */}
+      {verifyReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-3xl w-full p-6 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-amber-600" />
+                Kết quả AI Rà soát Đáp án & Công thức
+              </h3>
+              <button
+                onClick={() => setVerifyReport(null)}
+                className="text-slate-400 hover:text-slate-600 text-xs font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-y-auto text-xs text-slate-700 leading-relaxed whitespace-pre-wrap pr-1 flex-1">
+              <MathRenderer content={verifyReport} />
+            </div>
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setVerifyReport(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold"
+              >
+                Đóng báo cáo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
